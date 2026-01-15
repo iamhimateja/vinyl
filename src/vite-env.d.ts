@@ -2,15 +2,20 @@
 /// <reference types="vite-plugin-pwa/react" />
 /// <reference types="vite-plugin-pwa/info" />
 
-declare module 'virtual:pwa-register/react' {
-  import type { Dispatch, SetStateAction } from 'react';
+declare module "virtual:pwa-register/react" {
+  import type { Dispatch, SetStateAction } from "react";
 
   export interface RegisterSWOptions {
     immediate?: boolean;
     onNeedRefresh?: () => void;
     onOfflineReady?: () => void;
-    onRegistered?: (registration: ServiceWorkerRegistration | undefined) => void;
-    onRegisteredSW?: (swUrl: string, registration: ServiceWorkerRegistration | undefined) => void;
+    onRegistered?: (
+      registration: ServiceWorkerRegistration | undefined,
+    ) => void;
+    onRegisteredSW?: (
+      swUrl: string,
+      registration: ServiceWorkerRegistration | undefined,
+    ) => void;
     onRegisterError?: (error: Error) => void;
   }
 
@@ -19,4 +24,24 @@ declare module 'virtual:pwa-register/react' {
     offlineReady: [boolean, Dispatch<SetStateAction<boolean>>];
     updateServiceWorker: (reloadPage?: boolean) => Promise<void>;
   };
+}
+
+declare module "virtual:pwa-register" {
+  export interface RegisterSWOptions {
+    immediate?: boolean;
+    onNeedRefresh?: () => void;
+    onOfflineReady?: () => void;
+    onRegistered?: (
+      registration: ServiceWorkerRegistration | undefined,
+    ) => void;
+    onRegisteredSW?: (
+      swUrl: string,
+      registration: ServiceWorkerRegistration | undefined,
+    ) => void;
+    onRegisterError?: (error: Error) => void;
+  }
+
+  export function registerSW(
+    options?: RegisterSWOptions,
+  ): (reloadPage?: boolean) => Promise<void>;
 }

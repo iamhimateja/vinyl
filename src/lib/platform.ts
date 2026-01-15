@@ -9,12 +9,7 @@ export const isTauri = (): boolean => {
   return result;
 };
 
-// Log platform info on load
-if (typeof window !== "undefined") {
-  console.log("[Platform] ========== PLATFORM CHECK ==========");
-  console.log("[Platform] __TAURI__ in window:", "__TAURI__" in window);
-  console.log("[Platform] isTauri():", isTauri());
-}
+// Platform info available via getPlatformInfo() if needed
 
 // Platform info for debugging
 export const getPlatformInfo = (): {
@@ -135,45 +130,32 @@ export async function scanMusicFolder(
  * Check if a file exists (Tauri only)
  */
 export async function fileExists(filePath: string): Promise<boolean> {
-  console.log("[Platform:fileExists] Checking:", filePath);
-
   if (!isTauri()) {
-    console.log("[Platform:fileExists] Not Tauri, returning false");
     return false;
   }
 
   try {
     const { invoke } = await import("@tauri-apps/api/core");
-    const exists = await invoke<boolean>("file_exists", { filePath });
-    console.log("[Platform:fileExists] Result:", exists);
-    return exists;
+    return await invoke<boolean>("file_exists", { filePath });
   } catch (error) {
-    console.error("[Platform:fileExists] Failed:", error);
+    console.error("fileExists failed:", error);
     return false;
   }
 }
 
 /**
  * Convert a file path to an asset URL for Tauri
- * On web, this returns null as we use blob URLs
+ * Reads the file and creates a blob URL that WebKitGTK can play
+ * On web, this returns null as we use blob URLs from File objects
  */
 export async function getAssetUrl(filePath: string): Promise<string | null> {
-  console.log("[Platform:getAssetUrl] Called with:", filePath);
-  console.log("[Platform:getAssetUrl] isTauri:", isTauri());
-
   if (!isTauri()) {
-    console.log("[Platform:getAssetUrl] Not Tauri, returning null");
     return null;
   }
 
   try {
-    // Read the file and create a blob URL
-    // This bypasses the asset protocol which seems to have issues
     const { readFile } = await import("@tauri-apps/plugin-fs");
-    console.log("[Platform:getAssetUrl] Reading file...");
-
     const data = await readFile(filePath);
-    console.log("[Platform:getAssetUrl] File read, size:", data.length);
 
     // Determine MIME type from extension
     const ext = filePath.split(".").pop()?.toLowerCase() || "";
@@ -191,12 +173,11 @@ export async function getAssetUrl(filePath: string): Promise<string | null> {
     };
     const mimeType = mimeTypes[ext] || "audio/mpeg";
 
+    // Create blob URL
     const blob = new Blob([data], { type: mimeType });
-    const url = URL.createObjectURL(blob);
-    console.log("[Platform:getAssetUrl] Created blob URL:", url);
-    return url;
+    return URL.createObjectURL(blob);
   } catch (error) {
-    console.error("[Platform:getAssetUrl] Failed:", error);
+    console.error("getAssetUrl failed:", filePath, error);
     return null;
   }
 }

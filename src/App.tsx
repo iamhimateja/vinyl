@@ -270,11 +270,7 @@ function App() {
   // Tauri: Auto-load stored folder on startup
   useEffect(() => {
     if (isDesktop && hasInitialized && autoLoadStoredFolder) {
-      autoLoadStoredFolder().then((loaded) => {
-        if (loaded) {
-          console.log("Auto-loaded music from stored folder");
-        }
-      });
+      autoLoadStoredFolder();
     }
   }, [isDesktop, hasInitialized, autoLoadStoredFolder]);
 
@@ -436,12 +432,10 @@ function App() {
       if (existingPlaylist) {
         // Add songs to existing playlist (duplicates are filtered automatically)
         await addSongsToPlaylist(existingPlaylist.id, songIds);
-        console.log(`[Playlist] Updated existing playlist: ${playlistName}`);
       } else {
         // Create new playlist
         await createPlaylist(playlistName, songIds);
         playlistsCreated++;
-        console.log(`[Playlist] Created new playlist: ${playlistName}`);
       }
     }
 
