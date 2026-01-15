@@ -30,6 +30,10 @@ interface VirtualizedSongListProps {
   onDeleteSong?: (songId: string) => void;
   favoriteSongIds?: Set<string>;
   onToggleFavorite?: (songId: string) => void;
+  /** Skip delete confirmation dialog */
+  skipDeleteConfirmation?: boolean;
+  /** Callback when user chooses to skip confirmation */
+  onSkipDeleteConfirmationChange?: (skip: boolean) => void;
 }
 
 // Props for the memoized song row component
@@ -351,6 +355,8 @@ export function VirtualizedSongList({
   onDeleteSong,
   favoriteSongIds = new Set(),
   onToggleFavorite,
+  skipDeleteConfirmation = false,
+  onSkipDeleteConfirmationChange,
 }: VirtualizedSongListProps) {
   const parentRef = useRef<HTMLDivElement>(null);
   const [showPlaylistMenu, setShowPlaylistMenu] = useState<string | null>(null);
@@ -393,20 +399,45 @@ export function VirtualizedSongList({
     setShowPlaylistMenu(songId);
   }, []);
 
-  const handleShowDeleteDialog = useCallback((songId: string) => {
-    setDeleteDialogSongId(songId);
-  }, []);
-
-  const handleConfirmDelete = useCallback(() => {
-    if (deleteDialogSongId) {
-      if (onDeleteSong) {
-        onDeleteSong(deleteDialogSongId);
+  const handleShowDeleteDialog = useCallback(
+    (songId: string) => {
+      // If skip confirmation is enabled, delete immediately
+      if (skipDeleteConfirmation) {
+        if (onDeleteSong) {
+          onDeleteSong(songId);
+        } else {
+          onDelete(songId);
+        }
       } else {
-        onDelete(deleteDialogSongId);
+        setDeleteDialogSongId(songId);
       }
-      setDeleteDialogSongId(null);
-    }
-  }, [deleteDialogSongId, onDelete, onDeleteSong]);
+    },
+    [skipDeleteConfirmation, onDeleteSong, onDelete],
+  );
+
+  const handleConfirmDelete = useCallback(
+    (dontAskAgain?: boolean) => {
+      if (deleteDialogSongId) {
+        // If user checked "don't ask again", save the preference
+        if (dontAskAgain && onSkipDeleteConfirmationChange) {
+          onSkipDeleteConfirmationChange(true);
+        }
+
+        if (onDeleteSong) {
+          onDeleteSong(deleteDialogSongId);
+        } else {
+          onDelete(deleteDialogSongId);
+        }
+        setDeleteDialogSongId(null);
+      }
+    },
+    [
+      deleteDialogSongId,
+      onDelete,
+      onDeleteSong,
+      onSkipDeleteConfirmationChange,
+    ],
+  );
 
   if (songs.length === 0) {
     return (
@@ -477,6 +508,7 @@ export function VirtualizedSongList({
         confirmLabel="Delete"
         cancelLabel="Cancel"
         variant="danger"
+        showDontAskAgain={!!onSkipDeleteConfirmationChange}
         onConfirm={handleConfirmDelete}
         onCancel={() => setDeleteDialogSongId(null)}
       />

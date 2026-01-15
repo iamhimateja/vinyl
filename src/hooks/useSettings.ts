@@ -26,6 +26,9 @@ const defaultSettings: AppSettings = {
   // Equalizer
   eqEnabled: true,
   eqPreset: "Flat",
+
+  // Confirmations
+  skipDeleteConfirmation: false,
 };
 
 export function useSettings() {

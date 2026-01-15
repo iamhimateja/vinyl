@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRegisterSW } from "virtual:pwa-register/react";
 
+// Check if running in Tauri
+const isTauri = "__TAURI__" in window;
+
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
@@ -9,18 +12,20 @@ interface BeforeInstallPromptEvent extends Event {
 export function usePWA() {
   const [installPrompt, setInstallPrompt] =
     useState<BeforeInstallPromptEvent | null>(null);
-  const [isInstalled, setIsInstalled] = useState(false);
+  const [isInstalled, setIsInstalled] = useState(isTauri); // Consider Tauri as "installed"
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [isReady, setIsReady] = useState(false);
+  const [isReady, setIsReady] = useState(isTauri); // Tauri is always ready
 
   // Use vite-plugin-pwa's hook for service worker registration
+  // Only register in web browser, not in Tauri
   const {
     needRefresh: [needRefresh, setNeedRefresh],
     offlineReady: [offlineReady, setOfflineReady],
     updateServiceWorker,
   } = useRegisterSW({
+    immediate: !isTauri, // Don't register immediately in Tauri
     onRegistered(registration) {
-      if (registration) {
+      if (registration && !isTauri) {
         setIsReady(true);
         // Check for updates periodically (every hour)
         setInterval(
@@ -32,7 +37,10 @@ export function usePWA() {
       }
     },
     onRegisterError(error) {
-      console.error("[PWA] Service worker registration error:", error);
+      // Only log error in web browser, not in Tauri
+      if (!isTauri) {
+        console.error("[PWA] Service worker registration error:", error);
+      }
     },
   });
 

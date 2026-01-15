@@ -49,7 +49,7 @@ interface StoredSettings {
 
 export function useEqualizer(audioElement: HTMLAudioElement | null) {
   const [bands, setBands] = useState<EqualizerBand[]>(DEFAULT_BANDS);
-  const [enabled, setEnabled] = useState(true);
+  const [enabled, setEnabled] = useState(false); // Start disabled - audio plays normally
   const [currentPreset, setCurrentPreset] = useState<string | null>("Flat");
   const [isConnected, setIsConnected] = useState(false);
 
@@ -92,14 +92,21 @@ export function useEqualizer(audioElement: HTMLAudioElement | null) {
     if (!audioElement || isConnected) return;
 
     try {
+      console.log("[Equalizer] Initializing Web Audio API...");
+
       // Create AudioContext
       const AudioContextClass =
-        window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext })
+          .webkitAudioContext;
       audioContextRef.current = new AudioContextClass();
       const audioContext = audioContextRef.current;
 
+      console.log("[Equalizer] AudioContext state:", audioContext.state);
+
       // Create source from audio element
-      sourceNodeRef.current = audioContext.createMediaElementSource(audioElement);
+      sourceNodeRef.current =
+        audioContext.createMediaElementSource(audioElement);
 
       // Create gain node for master volume
       gainNodeRef.current = audioContext.createGain();
@@ -124,46 +131,37 @@ export function useEqualizer(audioElement: HTMLAudioElement | null) {
       previousNode.connect(gainNodeRef.current);
       gainNodeRef.current.connect(audioContext.destination);
 
+      // Resume if suspended
+      if (audioContext.state === "suspended") {
+        audioContext.resume().then(() => {
+          console.log("[Equalizer] AudioContext resumed");
+        });
+      }
+
       setIsConnected(true);
+      console.log("[Equalizer] Initialized successfully");
     } catch (error) {
-      console.error("Failed to initialize audio context:", error);
+      console.error("[Equalizer] Failed to initialize:", error);
     }
   }, [audioElement, bands, enabled, isConnected]);
 
-  // Initialize when audio element is available
+  // Only connect to audio element when equalizer is enabled
+  // This allows normal audio playback without Web Audio API overhead
   useEffect(() => {
-    if (audioElement && !isConnected) {
-      // Wait for user interaction to create AudioContext (required by browsers)
-      const handleInteraction = () => {
-        initializeAudioContext();
-        document.removeEventListener("click", handleInteraction);
-        document.removeEventListener("keydown", handleInteraction);
-        document.removeEventListener("touchstart", handleInteraction);
-      };
-
-      // Check if AudioContext can be created immediately
-      if (audioContextRef.current?.state === "running") {
-        initializeAudioContext();
-      } else {
-        document.addEventListener("click", handleInteraction);
-        document.addEventListener("keydown", handleInteraction);
-        document.addEventListener("touchstart", handleInteraction);
-
-        return () => {
-          document.removeEventListener("click", handleInteraction);
-          document.removeEventListener("keydown", handleInteraction);
-          document.removeEventListener("touchstart", handleInteraction);
-        };
-      }
+    if (audioElement && enabled && !isConnected) {
+      // Initialize immediately when enabled - user has already interacted
+      initializeAudioContext();
     }
-  }, [audioElement, isConnected, initializeAudioContext]);
+  }, [audioElement, enabled, isConnected, initializeAudioContext]);
 
-  // Resume AudioContext if suspended
+  // Resume AudioContext if suspended (needed after user interaction)
   useEffect(() => {
-    if (audioContextRef.current?.state === "suspended") {
-      audioContextRef.current.resume();
+    if (isConnected && audioContextRef.current?.state === "suspended") {
+      audioContextRef.current.resume().catch((err) => {
+        console.error("Failed to resume AudioContext:", err);
+      });
     }
-  }, [bands, enabled]);
+  }, [isConnected, bands, enabled]);
 
   // Update filter gains when bands change
   useEffect(() => {
@@ -175,7 +173,7 @@ export function useEqualizer(audioElement: HTMLAudioElement | null) {
       filter.gain.setTargetAtTime(
         targetGain,
         audioContextRef.current?.currentTime || 0,
-        0.01
+        0.01,
       );
     });
   }, [bands, enabled, isConnected]);
@@ -184,7 +182,10 @@ export function useEqualizer(audioElement: HTMLAudioElement | null) {
   const setBandGain = useCallback((index: number, gain: number) => {
     setBands((prev) => {
       const newBands = [...prev];
-      newBands[index] = { ...newBands[index], gain: Math.max(-12, Math.min(12, gain)) };
+      newBands[index] = {
+        ...newBands[index],
+        gain: Math.max(-12, Math.min(12, gain)),
+      };
       return newBands;
     });
     setCurrentPreset(null); // Clear preset when manually adjusting
@@ -196,7 +197,7 @@ export function useEqualizer(audioElement: HTMLAudioElement | null) {
       prev.map((band, index) => ({
         ...band,
         gain: preset.gains[index] ?? 0,
-      }))
+      })),
     );
     setCurrentPreset(preset.name);
   }, []);
@@ -214,7 +215,10 @@ export function useEqualizer(audioElement: HTMLAudioElement | null) {
   // Cleanup
   useEffect(() => {
     return () => {
-      if (audioContextRef.current && audioContextRef.current.state !== "closed") {
+      if (
+        audioContextRef.current &&
+        audioContextRef.current.state !== "closed"
+      ) {
         audioContextRef.current.close();
       }
     };
