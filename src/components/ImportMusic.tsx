@@ -12,6 +12,7 @@ import {
   Info,
   Lightbulb,
 } from "lucide-react";
+import { isTauri } from "../lib/platform";
 
 interface ImportMusicProps {
   onImport: (
@@ -22,10 +23,21 @@ interface ImportMusicProps {
     connected: number;
     newFiles: File[];
   };
+  // Tauri-specific: import from folder picker
+  onPickAndImportFolder?: () => Promise<{
+    imported: number;
+    skipped: number;
+    folderSongs: Map<string, string[]>;
+  } | null>;
+  // Callback to create playlists from folder structure
+  onCreatePlaylistsFromFolders?: (
+    folderSongs: Map<string, string[]>,
+  ) => Promise<number>;
   isImporting: boolean;
   importProgress: { current: number; total: number; skipped?: number } | null;
   connectedCount?: number;
   totalCount?: number;
+  isDesktop?: boolean;
 }
 
 interface ImportResult {
@@ -37,11 +49,15 @@ interface ImportResult {
 export function ImportMusic({
   onImport,
   onConnectFolder,
+  onPickAndImportFolder,
+  onCreatePlaylistsFromFolders,
   isImporting,
   importProgress,
   connectedCount = 0,
   totalCount = 0,
+  isDesktop = false,
 }: ImportMusicProps) {
+  const isRunningInTauri = isDesktop || isTauri();
   const [isOpen, setIsOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
@@ -59,9 +75,11 @@ export function ImportMusic({
   const allConnected = totalCount > 0 && connectedCount === totalCount;
   const disconnectedCount = totalCount - connectedCount;
 
-  // Show reconnect dialog automatically when songs need reconnection
+  // Show reconnect dialog automatically when songs need reconnection (web only)
+  // On desktop, songs with file paths don't need reconnection
   useEffect(() => {
     if (
+      !isRunningInTauri &&
       hasDisconnectedSongs &&
       !reconnectDismissed &&
       !showReconnectDialog &&
@@ -73,7 +91,13 @@ export function ImportMusic({
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [hasDisconnectedSongs, reconnectDismissed, showReconnectDialog, isOpen]);
+  }, [
+    isRunningInTauri,
+    hasDisconnectedSongs,
+    reconnectDismissed,
+    showReconnectDialog,
+    isOpen,
+  ]);
 
   // Reset dismissed state when all songs are connected
   useEffect(() => {
@@ -503,17 +527,54 @@ export function ImportMusic({
 
             {/* Import buttons */}
             <div className="grid grid-cols-2 gap-3 mt-4">
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="flex items-center justify-center gap-2 p-3 bg-vinyl-border/50 hover:bg-vinyl-border rounded-lg transition-colors"
-              >
-                <FileAudio className="w-5 h-5 text-vinyl-accent" />
-                <span className="text-vinyl-text text-sm">Select Files</span>
-              </button>
+              {!isRunningInTauri && (
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center justify-center gap-2 p-3 bg-vinyl-border/50 hover:bg-vinyl-border rounded-lg transition-colors"
+                >
+                  <FileAudio className="w-5 h-5 text-vinyl-accent" />
+                  <span className="text-vinyl-text text-sm">Select Files</span>
+                </button>
+              )}
 
               <button
-                onClick={() => folderInputRef.current?.click()}
-                className="flex items-center justify-center gap-2 p-3 bg-vinyl-border/50 hover:bg-vinyl-border rounded-lg transition-colors"
+                onClick={async () => {
+                  if (isRunningInTauri && onPickAndImportFolder) {
+                    // Use native Tauri folder picker
+                    const result = await onPickAndImportFolder();
+                    if (result) {
+                      // Create playlists from folder structure
+                      let playlistsCreated = 0;
+                      if (
+                        onCreatePlaylistsFromFolders &&
+                        result.folderSongs.size > 0
+                      ) {
+                        playlistsCreated = await onCreatePlaylistsFromFolders(
+                          result.folderSongs,
+                        );
+                        console.log(
+                          "[Import] Created playlists from folders:",
+                          playlistsCreated,
+                        );
+                      }
+
+                      setImportResult({
+                        imported: result.imported,
+                        skipped: result.skipped,
+                        total: result.imported + result.skipped,
+                      });
+                      if (result.skipped === 0 && result.imported > 0) {
+                        setIsOpen(false);
+                      }
+                    }
+                  } else {
+                    // Use web folder picker
+                    folderInputRef.current?.click();
+                  }
+                }}
+                className={`flex items-center justify-center gap-2 p-3 bg-vinyl-border/50 hover:bg-vinyl-border rounded-lg transition-colors ${
+                  isRunningInTauri ? "col-span-2" : ""
+                }`}
               >
                 <FolderOpen className="w-5 h-5 text-vinyl-accent" />
                 <span className="text-vinyl-text text-sm">Select Folder</span>

@@ -7,10 +7,13 @@ export interface Song {
   coverArt?: string;
   sourceType: "local";
   addedAt: number;
-  // Original filename for matching when reconnecting
+  // Original filename for matching when reconnecting (web)
   fileName?: string;
   // File size in bytes for matching
   fileSize?: number;
+  // Full file path for desktop apps (Tauri)
+  // When present, we can load the file directly without user interaction
+  filePath?: string;
 }
 
 export interface Playlist {
@@ -70,4 +73,7 @@ export interface AppSettings {
   // Equalizer
   eqEnabled: boolean;
   eqPreset: string | null;
+
+  // Confirmations
+  skipDeleteConfirmation: boolean;
 }

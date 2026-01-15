@@ -12,11 +12,14 @@ import {
   RotateCcw,
   Save,
   Type,
+  Trash2,
+  AlertTriangle,
 } from "lucide-react";
 import type { AppSettings, RepeatMode, QueueBehavior } from "../types";
 import type { EqualizerBand, EqualizerPreset } from "../hooks/useEqualizer";
 import { EQUALIZER_PRESETS } from "../hooks/useEqualizer";
 import { tooltipProps } from "./Tooltip";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 interface SettingsViewProps {
   settings: AppSettings;
@@ -25,6 +28,8 @@ interface SettingsViewProps {
     value: AppSettings[K],
   ) => void;
   onResetSettings: () => void;
+  /** Reset entire player - clears all data */
+  onResetPlayer: () => Promise<void>;
   // Equalizer props
   eqBands: EqualizerBand[];
   eqEnabled: boolean;
@@ -47,6 +52,7 @@ export function SettingsView({
   settings,
   onUpdateSetting,
   onResetSettings,
+  onResetPlayer,
   eqBands,
   eqEnabled,
   eqPreset,
@@ -58,6 +64,8 @@ export function SettingsView({
 }: SettingsViewProps) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [tempTitle, setTempTitle] = useState(settings.appTitle);
+  const [showResetPlayerDialog, setShowResetPlayerDialog] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
 
   const handleTitleSave = () => {
     onUpdateSetting("appTitle", tempTitle.trim() || "Vinyl");
@@ -522,6 +530,85 @@ export function SettingsView({
           )}
         </div>
       </section>
+
+      {/* Confirmations Section */}
+      <section className="bg-vinyl-surface border border-vinyl-border rounded-lg overflow-hidden">
+        <div className="px-4 py-3 border-b border-vinyl-border bg-vinyl-border/20">
+          <h2 className="font-semibold text-vinyl-text flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 text-vinyl-accent" />
+            Confirmations
+          </h2>
+        </div>
+        <div className="p-4 space-y-4">
+          {/* Skip Delete Confirmation */}
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-vinyl-text font-medium">
+                Skip Delete Confirmation
+              </p>
+              <p className="text-vinyl-text-muted text-sm">
+                Delete songs immediately without confirmation dialog
+              </p>
+            </div>
+            <ToggleSwitch
+              enabled={settings.skipDeleteConfirmation}
+              onChange={(enabled) =>
+                onUpdateSetting("skipDeleteConfirmation", enabled)
+              }
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* Danger Zone Section */}
+      <section className="bg-red-500/5 border border-red-500/20 rounded-lg overflow-hidden">
+        <div className="px-4 py-3 border-b border-red-500/20 bg-red-500/10">
+          <h2 className="font-semibold text-red-400 flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5" />
+            Danger Zone
+          </h2>
+        </div>
+        <div className="p-4 space-y-4">
+          {/* Reset Player */}
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-vinyl-text font-medium">Reset Player</p>
+              <p className="text-vinyl-text-muted text-sm">
+                Clear all music, playlists, settings, and start fresh
+              </p>
+            </div>
+            <button
+              onClick={() => setShowResetPlayerDialog(true)}
+              disabled={isResetting}
+              className="flex items-center gap-2 px-4 py-2 bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/30 transition-colors disabled:opacity-50"
+            >
+              <Trash2 className="w-4 h-4" />
+              {isResetting ? "Resetting..." : "Reset Everything"}
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* Reset Player Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={showResetPlayerDialog}
+        title="Reset Player?"
+        message="This will permanently delete all your music, playlists, favorites, and settings. The app will restart in its original state."
+        warningText="⚠️ This action cannot be undone! All your imported music and playlists will be lost forever."
+        confirmLabel={isResetting ? "Resetting..." : "Yes, Reset Everything"}
+        cancelLabel="Cancel"
+        variant="danger"
+        onConfirm={async () => {
+          setIsResetting(true);
+          try {
+            await onResetPlayer();
+          } finally {
+            setIsResetting(false);
+            setShowResetPlayerDialog(false);
+          }
+        }}
+        onCancel={() => setShowResetPlayerDialog(false)}
+      />
     </div>
   );
 }

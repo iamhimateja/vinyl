@@ -3,11 +3,30 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
 
+// Check if we're building for Tauri
+const isTauri = process.env.TAURI_ENV_PLATFORM !== undefined;
+
 export default defineConfig({
+  // Prevent vite from obscuring rust errors
+  clearScreen: false,
+  // Tauri expects a fixed port, fail if that port is not available
+  server: {
+    port: 5173,
+    strictPort: true,
+    host: true, // Listen on all addresses for Tauri
+    watch: {
+      // Tell vite to ignore watching `src-tauri`
+      ignored: ["**/src-tauri/**"],
+    },
+  },
+  // Env variables starting with TAURI_ are exposed to the client
+  envPrefix: ["VITE_", "TAURI_"],
   plugins: [
     react(),
     tailwindcss(),
     VitePWA({
+      // Disable PWA in Tauri builds
+      disable: isTauri,
       registerType: "autoUpdate",
       injectRegister: "auto",
       strategies: "generateSW",

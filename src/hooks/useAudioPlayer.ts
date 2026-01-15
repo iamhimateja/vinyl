@@ -8,6 +8,7 @@ import type {
 } from "../types";
 import { savePlayerState, getPlayerState } from "../lib/db";
 import { getCachedFile } from "./useSongs";
+import { isTauri, getAssetUrl, fileExists } from "../lib/platform";
 
 const defaultPlayerState: PlayerState = {
   currentSongId: null,
@@ -32,6 +33,7 @@ export function useAudioPlayer(songs: Song[], settings?: AppSettings) {
   const objectUrlRef = useRef<string | null>(null);
   const hasRestoredSong = useRef(false);
   const savedPositionRef = useRef<number>(0);
+  const isLoadingRef = useRef(false); // Prevent concurrent loads
 
   // Use refs for values needed in event handlers to avoid stale closures
   const playerStateRef = useRef(playerState);
@@ -75,22 +77,60 @@ export function useAudioPlayer(songs: Song[], settings?: AppSettings) {
 
     setPlaybackState("buffering");
 
-    // Check if file is in memory cache
-    const cachedFile = getCachedFile(song.id);
-    if (cachedFile) {
-      objectUrlRef.current = URL.createObjectURL(cachedFile);
-      audioRef.current.src = objectUrlRef.current;
-    } else {
+    // Try to get audio source
+    let audioUrl: string | null = null;
+
+    console.log("[AudioPlayer] Playing song:", song.title);
+    console.log("[AudioPlayer] isTauri:", isTauri());
+    console.log("[AudioPlayer] song.filePath:", song.filePath);
+
+    // On desktop with file path, use asset protocol
+    if (isTauri() && song.filePath) {
+      // Verify file still exists
+      const exists = await fileExists(song.filePath);
+      console.log("[AudioPlayer] fileExists:", exists);
+
+      if (exists) {
+        audioUrl = await getAssetUrl(song.filePath);
+        console.log("[AudioPlayer] Asset URL:", audioUrl);
+        // Store for cleanup (getAssetUrl creates blob URLs that need revoking)
+        if (audioUrl) {
+          objectUrlRef.current = audioUrl;
+        }
+      }
+    }
+
+    // Fall back to memory cache (web or desktop without filePath)
+    if (!audioUrl) {
+      const cachedFile = getCachedFile(song.id);
+      console.log(
+        "[AudioPlayer] Cached file:",
+        cachedFile ? "found" : "not found",
+      );
+      if (cachedFile) {
+        objectUrlRef.current = URL.createObjectURL(cachedFile);
+        audioUrl = objectUrlRef.current;
+      }
+    }
+
+    if (!audioUrl) {
       // No audio source available - file needs to be reconnected
       console.error(
         "No audio source available for song:",
         song.title,
         "- connect your music folder",
       );
+      console.error("[AudioPlayer] Debug info:", {
+        isTauri: isTauri(),
+        filePath: song.filePath,
+        songId: song.id,
+      });
       setPlaybackState("idle");
       setPlayerState((prev) => ({ ...prev, isPlaying: false }));
       return;
     }
+
+    audioRef.current.src = audioUrl;
 
     // Apply current playback speed
     audioRef.current.playbackRate = state.speed;
@@ -300,8 +340,23 @@ export function useAudioPlayer(songs: Song[], settings?: AppSettings) {
   // Load a song (prepare for playback)
   // If startPosition is provided, seeks to that position once loaded
   const loadSong = useCallback(
-    async (song: Song, startPosition?: number): Promise<boolean> => {
+    async (
+      song: Song,
+      startPosition?: number,
+      isUserInitiated?: boolean,
+    ): Promise<boolean> => {
       if (!audioRef.current) return false;
+
+      // If a user-initiated load, always proceed (and mark as loading)
+      // If not user-initiated (like restore), skip if already loading
+      if (isUserInitiated) {
+        isLoadingRef.current = true;
+      } else if (isLoadingRef.current) {
+        console.log(
+          "[AudioPlayer:loadSong] Skipping non-user load - already loading",
+        );
+        return false;
+      }
 
       // Revoke previous object URL
       if (objectUrlRef.current) {
@@ -311,21 +366,72 @@ export function useAudioPlayer(songs: Song[], settings?: AppSettings) {
 
       setPlaybackState("buffering");
 
-      // Check if file is in memory cache
-      const cachedFile = getCachedFile(song.id);
-      if (cachedFile) {
-        objectUrlRef.current = URL.createObjectURL(cachedFile);
-        audioRef.current.src = objectUrlRef.current;
-      } else {
+      let audioUrl: string | null = null;
+
+      // Very visible debug output
+      const debugInfo = {
+        title: song.title,
+        isTauri: isTauri(),
+        filePath: song.filePath,
+        hasFilePath: !!song.filePath,
+        songId: song.id,
+      };
+      console.log("[AudioPlayer:loadSong] ========== LOADING SONG ==========");
+      console.log(
+        "[AudioPlayer:loadSong] Debug:",
+        JSON.stringify(debugInfo, null, 2),
+      );
+
+      // Temporary alert for debugging - remove after fix
+      // alert(`Loading: ${song.title}\nisTauri: ${isTauri()}\nfilePath: ${song.filePath || 'NONE'}`);
+
+      // On desktop with file path, use asset protocol
+      if (isTauri() && song.filePath) {
+        // Verify file still exists
+        const exists = await fileExists(song.filePath);
+        console.log("[AudioPlayer:loadSong] fileExists:", exists);
+
+        if (exists) {
+          audioUrl = await getAssetUrl(song.filePath);
+          console.log("[AudioPlayer:loadSong] Asset URL:", audioUrl);
+          // Store for cleanup (getAssetUrl creates blob URLs that need revoking)
+          if (audioUrl) {
+            objectUrlRef.current = audioUrl;
+          }
+        }
+      }
+
+      // Fall back to memory cache (web or desktop without filePath)
+      if (!audioUrl) {
+        const cachedFile = getCachedFile(song.id);
+        console.log(
+          "[AudioPlayer:loadSong] Cached file:",
+          cachedFile ? "found" : "not found",
+        );
+        if (cachedFile) {
+          objectUrlRef.current = URL.createObjectURL(cachedFile);
+          audioUrl = objectUrlRef.current;
+        }
+      }
+
+      if (!audioUrl) {
         // No audio source available - file needs to be reconnected
         console.error(
           "No audio source available for song:",
           song.title,
           "- connect your music folder",
         );
+        console.error("[AudioPlayer:loadSong] Debug info:", {
+          isTauri: isTauri(),
+          filePath: song.filePath,
+          songId: song.id,
+        });
         setPlaybackState("idle");
+        isLoadingRef.current = false; // Reset loading flag on failure
         return false;
       }
+
+      audioRef.current.src = audioUrl;
 
       // Setup Media Session
       if ("mediaSession" in navigator) {
@@ -362,6 +468,11 @@ export function useAudioPlayer(songs: Song[], settings?: AppSettings) {
           }
         });
       }
+
+      // Clear loading flag after a short delay to prevent immediate re-triggers
+      setTimeout(() => {
+        isLoadingRef.current = false;
+      }, 100);
 
       return true;
     },
@@ -408,15 +519,44 @@ export function useAudioPlayer(songs: Song[], settings?: AppSettings) {
 
   // Play a specific song
   const playSong = async (song: Song, playlistId?: string | null) => {
+    // Debug: log the song being played
+    console.log("[AudioPlayer:playSong] Called with song:", {
+      id: song.id,
+      title: song.title,
+      filePath: song.filePath,
+      hasFilePath: !!song.filePath,
+    });
+
+    // Also check if this song exists in our songs array with filePath
+    const songInArray = songs.find((s) => s.id === song.id);
+    console.log(
+      "[AudioPlayer:playSong] Song in songs array:",
+      songInArray
+        ? {
+            id: songInArray.id,
+            title: songInArray.title,
+            filePath: songInArray.filePath,
+            hasFilePath: !!songInArray.filePath,
+          }
+        : "NOT FOUND",
+    );
+
+    // Use the song from our array if it has more complete data
+    const songToPlay = songInArray?.filePath ? songInArray : song;
+    console.log(
+      "[AudioPlayer:playSong] Using song:",
+      songToPlay.filePath ? "from array" : "from param",
+    );
+
     const queue = playerState.shuffle
       ? shuffleArray(songs.map((s) => s.id))
       : songs.map((s) => s.id);
 
-    const queueIndex = queue.indexOf(song.id);
+    const queueIndex = queue.indexOf(songToPlay.id);
 
     setPlayerState((prev) => ({
       ...prev,
-      currentSongId: song.id,
+      currentSongId: songToPlay.id,
       isPlaying: true,
       queue,
       queueIndex: queueIndex >= 0 ? queueIndex : 0,
@@ -424,7 +564,10 @@ export function useAudioPlayer(songs: Song[], settings?: AppSettings) {
         playlistId !== undefined ? playlistId : prev.currentPlaylistId,
     }));
 
-    const loaded = await loadSong(song);
+    // Mark hasRestoredSong to prevent restore effect from interfering
+    hasRestoredSong.current = true;
+
+    const loaded = await loadSong(songToPlay, undefined, true); // User-initiated
 
     if (!loaded) {
       // Audio source not available - reset state
@@ -473,7 +616,10 @@ export function useAudioPlayer(songs: Song[], settings?: AppSettings) {
       currentPlaylistId: playlist.id,
     }));
 
-    await loadSong(firstSong);
+    // Mark hasRestoredSong to prevent restore effect from interfering
+    hasRestoredSong.current = true;
+
+    await loadSong(firstSong, undefined, true); // User-initiated
 
     if (audioRef.current) {
       // Apply current playback speed
