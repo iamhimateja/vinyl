@@ -1,0 +1,153 @@
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
+import { VitePWA } from "vite-plugin-pwa";
+
+export default defineConfig({
+  plugins: [
+    react(),
+    tailwindcss(),
+    VitePWA({
+      registerType: "autoUpdate",
+      injectRegister: "auto",
+      strategies: "generateSW",
+      workbox: {
+        // Cache all static assets including dynamically loaded chunks
+        globPatterns: ["**/*.{js,css,html,ico,png,svg,woff,woff2,webmanifest}"],
+        // Cache the index.html for offline access (SPA fallback)
+        navigateFallback: "index.html",
+        navigateFallbackDenylist: [/^\/api/],
+        // Runtime caching rules
+        runtimeCaching: [
+          {
+            // Cache Google Fonts stylesheets
+            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+            handler: "StaleWhileRevalidate",
+            options: {
+              cacheName: "google-fonts-stylesheets",
+              expiration: {
+                maxEntries: 10,
+                maxAgeSeconds: 60 * 60 * 24 * 365, // 1 year
+              },
+            },
+          },
+          {
+            // Cache Google Fonts webfonts
+            urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "google-fonts-webfonts",
+              expiration: {
+                maxEntries: 30,
+                maxAgeSeconds: 60 * 60 * 24 * 365, // 1 year
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+            },
+          },
+          {
+            // Cache images
+            urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp|ico)$/i,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "images-cache",
+              expiration: {
+                maxEntries: 100,
+                maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
+              },
+            },
+          },
+          {
+            // Cache JS/CSS chunks for offline
+            urlPattern: /\.(?:js|css)$/i,
+            handler: "StaleWhileRevalidate",
+            options: {
+              cacheName: "static-resources",
+              expiration: {
+                maxEntries: 100,
+                maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
+              },
+            },
+          },
+        ],
+        // Clean up old caches
+        cleanupOutdatedCaches: true,
+        // Skip waiting to activate new service worker immediately
+        skipWaiting: true,
+        clientsClaim: true,
+        // Ensure all assets are precached for offline use
+        sourcemap: false,
+      },
+      includeAssets: ["icons/*.svg", "icons/*.png"],
+      manifest: {
+        name: "Vinyl Music Player",
+        short_name: "Vinyl",
+        description:
+          "A minimal, offline-first music player that feels like a personal vinyl player",
+        theme_color: "#d4a574",
+        background_color: "#1a1a1a",
+        display: "standalone",
+        scope: "/",
+        start_url: "/",
+        orientation: "any",
+        id: "vinyl-music-player",
+        icons: [
+          {
+            src: "icons/icon.svg",
+            sizes: "48x48 72x72 96x96 128x128 192x192 256x256 512x512",
+            type: "image/svg+xml",
+            purpose: "any",
+          },
+          {
+            src: "icons/icon-maskable.svg",
+            sizes: "48x48 72x72 96x96 128x128 192x192 256x256 512x512",
+            type: "image/svg+xml",
+            purpose: "maskable",
+          },
+        ],
+        categories: ["music", "entertainment"],
+        shortcuts: [
+          {
+            name: "Library",
+            short_name: "Library",
+            description: "View your music library",
+            url: "/library",
+            icons: [{ src: "icons/icon.svg", sizes: "96x96" }],
+          },
+        ],
+        launch_handler: {
+          client_mode: "navigate-existing",
+        },
+      },
+      devOptions: {
+        enabled: true,
+        type: "module",
+      },
+    }),
+  ],
+  build: {
+    sourcemap: false,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // React core
+          "react-vendor": ["react", "react-dom"],
+          // Router
+          router: ["react-router-dom"],
+          // UI libraries
+          "ui-vendor": [
+            "lucide-react",
+            "react-tooltip",
+            "@tanstack/react-virtual",
+          ],
+          // Music metadata parser (large library)
+          "music-metadata": ["music-metadata"],
+          // IndexedDB
+          idb: ["idb"],
+        },
+      },
+    },
+  },
+  publicDir: "public",
+});

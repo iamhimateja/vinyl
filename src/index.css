@@ -1,0 +1,662 @@
+@import "tailwindcss";
+
+/* Safe area padding for notched devices */
+.pt-safe {
+  padding-top: max(1rem, env(safe-area-inset-top));
+}
+
+.pb-safe {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+/* Custom grid for 16-step sequencer */
+.grid-cols-16 {
+  grid-template-columns: repeat(16, minmax(0, 1fr));
+}
+
+/* Z-index layers */
+.z-55 {
+  z-index: 55;
+}
+
+.z-60 {
+  z-index: 60;
+}
+
+/* Theme CSS Custom Properties - Dark theme (default) */
+:root {
+  --vinyl-bg: #1a1a1a;
+  --vinyl-surface: #242424;
+  --vinyl-accent: #d4a574;
+  --vinyl-accent-light: #e8c9a8;
+  --vinyl-text: #e5e5e5;
+  --vinyl-text-muted: #888888;
+  --vinyl-border: #444444;
+}
+
+/* Light theme - applied via class on html element */
+html.light,
+:root.light {
+  --vinyl-bg: #f5f5f4;
+  --vinyl-surface: #ffffff;
+  --vinyl-accent: #b8956a;
+  --vinyl-accent-light: #c4a57a;
+  --vinyl-text: #1a1a1a;
+  --vinyl-text-muted: #555555;
+  --vinyl-border: #d1d5db;
+}
+
+/* Tailwind v4 theme - map to CSS variables */
+@theme {
+  --color-vinyl-bg: var(--vinyl-bg);
+  --color-vinyl-surface: var(--vinyl-surface);
+  --color-vinyl-accent: var(--vinyl-accent);
+  --color-vinyl-accent-light: var(--vinyl-accent-light);
+  --color-vinyl-text: var(--vinyl-text);
+  --color-vinyl-text-muted: var(--vinyl-text-muted);
+  --color-vinyl-border: var(--vinyl-border);
+}
+
+/* Apply theme colors to body */
+body {
+  background-color: var(--vinyl-bg);
+  color: var(--vinyl-text);
+  transition:
+    background-color 0.3s ease,
+    color 0.3s ease;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes wobble {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(2deg);
+  }
+  75% {
+    transform: rotate(-2deg);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-up {
+  from {
+    transform: translateY(100%);
+    opacity: 0.8;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+    opacity: 0.8;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slide-down {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(100%);
+  }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.3s ease-out forwards;
+}
+
+.animate-slide-down {
+  animation: slide-down 0.3s ease-out forwards;
+}
+
+@keyframes pulse-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 20px rgba(212, 165, 116, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 40px rgba(212, 165, 116, 0.6);
+  }
+}
+
+/* Vinyl spin with variable speed - using inline styles for dynamic values */
+.vinyl-spinning {
+  animation: spin 3s linear infinite;
+  animation-play-state: running;
+}
+
+.vinyl-paused {
+  animation: spin 3s linear infinite;
+  animation-play-state: paused;
+}
+
+.animate-wobble {
+  animation: wobble 0.5s ease-in-out infinite;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out forwards;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--vinyl-surface);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--vinyl-border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--vinyl-accent);
+}
+
+/* Range input styling - Progress Slider */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  width: 100%;
+}
+
+/* WebKit (Chrome, Safari, Edge) */
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--vinyl-border);
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  background: var(--vinyl-accent);
+  border-radius: 50%;
+  margin-top: -5px;
+  transition: transform 0.2s;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+/* Firefox */
+input[type="range"]::-moz-range-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--vinyl-border);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  background: var(--vinyl-accent);
+  border-radius: 50%;
+  border: none;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+input[type="range"]::-moz-range-thumb:hover {
+  transform: scale(1.2);
+}
+
+/* Progress slider with filled track */
+input[type="range"].progress-slider {
+  --progress: 0%;
+  background: linear-gradient(
+    to right,
+    var(--vinyl-accent) var(--progress),
+    var(--vinyl-border) var(--progress)
+  );
+  border-radius: 3px;
+  height: 6px;
+}
+
+input[type="range"].progress-slider::-webkit-slider-runnable-track {
+  background: transparent;
+  height: 6px;
+  border-radius: 3px;
+}
+
+input[type="range"].progress-slider::-moz-range-track {
+  background: transparent;
+  height: 6px;
+  border-radius: 3px;
+}
+
+/* Top progress container */
+.top-progress-container {
+  --progress: 0%;
+  height: 3px;
+  position: relative;
+  transform-origin: bottom center;
+  transition: transform 0.15s ease;
+}
+
+.top-progress-container:hover,
+.top-progress-container:focus-within {
+  transform: scaleY(2);
+}
+
+/* Top border progress slider - thin by default, expands on hover */
+input[type="range"].top-progress-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  border-radius: 0;
+  cursor: pointer;
+  position: relative;
+  z-index: 10;
+}
+
+/* Progress track background on the container */
+.top-progress-container {
+  background: linear-gradient(
+    to right,
+    var(--vinyl-accent) var(--progress),
+    var(--vinyl-border) var(--progress)
+  );
+}
+
+input[type="range"].top-progress-slider:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+input[type="range"].top-progress-slider::-webkit-slider-runnable-track {
+  background: transparent;
+  height: 100%;
+  border-radius: 0;
+}
+
+input[type="range"].top-progress-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  background: var(--vinyl-accent);
+  border: 2px solid #fff;
+  border-radius: 50%;
+  margin-top: -4.5px;
+  box-shadow:
+    0 0 8px rgba(255, 200, 140, 0.8),
+    0 0 16px rgba(212, 165, 116, 0.5);
+  transition: all 0.15s ease;
+  cursor: pointer;
+  transform: scaleY(1);
+}
+
+.top-progress-container:hover
+  input[type="range"].top-progress-slider::-webkit-slider-thumb,
+input[type="range"].top-progress-slider:focus::-webkit-slider-thumb,
+input[type="range"].top-progress-slider:active::-webkit-slider-thumb {
+  width: 14px;
+  height: 14px;
+  margin-top: -5.5px;
+  background: #fff;
+  border-color: var(--vinyl-accent);
+  box-shadow:
+    0 0 12px rgba(255, 200, 140, 1),
+    0 0 20px rgba(212, 165, 116, 0.8);
+  transform: scaleY(0.5);
+}
+
+input[type="range"].top-progress-slider::-moz-range-track {
+  background: transparent;
+  height: 100%;
+  border-radius: 0;
+}
+
+input[type="range"].top-progress-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  background: var(--vinyl-accent);
+  border: 2px solid #fff;
+  border-radius: 50%;
+  transform: scaleY(1);
+  box-shadow:
+    0 0 8px rgba(255, 200, 140, 0.8),
+    0 0 16px rgba(212, 165, 116, 0.5);
+  transition: all 0.15s ease;
+  cursor: pointer;
+}
+
+.top-progress-container:hover
+  input[type="range"].top-progress-slider::-moz-range-thumb,
+input[type="range"].top-progress-slider:focus::-moz-range-thumb,
+input[type="range"].top-progress-slider:active::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: #fff;
+  border-color: var(--vinyl-accent);
+  box-shadow:
+    0 0 12px rgba(255, 200, 140, 1),
+    0 0 20px rgba(212, 165, 116, 0.8);
+  transform: scaleY(0.5);
+}
+
+input[type="range"].top-progress-slider::-moz-range-progress {
+  background: var(--vinyl-accent);
+  height: 100%;
+  border-radius: 0;
+}
+
+/* Firefox progress fill using pseudo element */
+input[type="range"]::-moz-range-progress {
+  background: var(--vinyl-accent);
+  height: 6px;
+  border-radius: 3px 0 0 3px;
+}
+
+/* Slider container for expandable controls */
+.slider-container {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.slider-expandable {
+  width: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition:
+    width 0.3s ease,
+    opacity 0.3s ease;
+}
+
+.slider-container:hover .slider-expandable,
+.slider-container:focus-within .slider-expandable,
+.slider-expandable.expanded {
+  width: 80px;
+  opacity: 1;
+}
+
+@media (min-width: 640px) {
+  .slider-container:hover .slider-expandable,
+  .slider-container:focus-within .slider-expandable,
+  .slider-expandable.expanded {
+    width: 100px;
+  }
+}
+
+/* Vertical volume slider */
+.volume-slider-vertical {
+  -webkit-appearance: slider-vertical;
+  appearance: slider-vertical;
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 16px;
+  height: 96px;
+  --volume: 0%;
+  background: linear-gradient(
+    to top,
+    var(--vinyl-accent) var(--volume),
+    var(--vinyl-border) var(--volume)
+  );
+  border-radius: 3px;
+}
+
+.volume-slider-vertical::-webkit-slider-runnable-track {
+  width: 6px;
+  height: 100%;
+  background: transparent;
+  border-radius: 3px;
+}
+
+.volume-slider-vertical::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  background: var(--vinyl-accent);
+  border-radius: 50%;
+  margin-left: -5px;
+  transition: transform 0.2s;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.volume-slider-vertical::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.volume-slider-vertical::-moz-range-track {
+  width: 6px;
+  height: 100%;
+  background: transparent;
+  border-radius: 3px;
+}
+
+.volume-slider-vertical::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  background: var(--vinyl-accent);
+  border-radius: 50%;
+  border: none;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.volume-slider-vertical::-moz-range-thumb:hover {
+  transform: scale(1.2);
+}
+
+.volume-slider-vertical::-moz-range-progress {
+  background: var(--vinyl-accent);
+  width: 6px;
+  border-radius: 3px 3px 0 0;
+}
+
+/* Equalizer vertical slider */
+.eq-slider-vertical {
+  -webkit-appearance: slider-vertical;
+  appearance: slider-vertical;
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 24px;
+  height: 128px;
+  --eq-value: 50%;
+  background: linear-gradient(
+    to top,
+    var(--vinyl-accent) var(--eq-value),
+    var(--vinyl-border) var(--eq-value)
+  );
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.eq-slider-vertical:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.eq-slider-vertical::-webkit-slider-runnable-track {
+  width: 8px;
+  height: 100%;
+  background: transparent;
+  border-radius: 4px;
+}
+
+.eq-slider-vertical::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 10px;
+  background: var(--vinyl-accent);
+  border-radius: 2px;
+  margin-left: -6px;
+  transition:
+    transform 0.15s,
+    box-shadow 0.15s;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.eq-slider-vertical::-webkit-slider-thumb:hover {
+  transform: scaleX(1.1);
+  box-shadow: 0 2px 8px rgba(212, 165, 116, 0.5);
+}
+
+.eq-slider-vertical::-moz-range-track {
+  width: 8px;
+  height: 100%;
+  background: transparent;
+  border-radius: 4px;
+}
+
+.eq-slider-vertical::-moz-range-thumb {
+  width: 20px;
+  height: 10px;
+  background: var(--vinyl-accent);
+  border-radius: 2px;
+  border: none;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.eq-slider-vertical::-moz-range-thumb:hover {
+  transform: scaleX(1.1);
+  box-shadow: 0 2px 8px rgba(212, 165, 116, 0.5);
+}
+
+.eq-slider-vertical::-moz-range-progress {
+  background: var(--vinyl-accent);
+  width: 8px;
+  border-radius: 4px 4px 0 0;
+}
+
+/* Smaller equalizer vertical slider for popover */
+.eq-slider-vertical-small {
+  -webkit-appearance: slider-vertical;
+  appearance: slider-vertical;
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 20px;
+  height: 96px;
+  --eq-value: 50%;
+  background: linear-gradient(
+    to top,
+    var(--vinyl-accent) var(--eq-value),
+    var(--vinyl-border) var(--eq-value)
+  );
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.eq-slider-vertical-small:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.eq-slider-vertical-small::-webkit-slider-runnable-track {
+  width: 6px;
+  height: 100%;
+  background: transparent;
+  border-radius: 3px;
+}
+
+.eq-slider-vertical-small::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 8px;
+  background: var(--vinyl-accent);
+  border-radius: 2px;
+  margin-left: -5px;
+  transition:
+    transform 0.15s,
+    box-shadow 0.15s;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.eq-slider-vertical-small::-webkit-slider-thumb:hover {
+  transform: scaleX(1.1);
+  box-shadow: 0 2px 6px rgba(212, 165, 116, 0.5);
+}
+
+.eq-slider-vertical-small::-moz-range-track {
+  width: 6px;
+  height: 100%;
+  background: transparent;
+  border-radius: 3px;
+}
+
+.eq-slider-vertical-small::-moz-range-thumb {
+  width: 16px;
+  height: 8px;
+  background: var(--vinyl-accent);
+  border-radius: 2px;
+  border: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.eq-slider-vertical-small::-moz-range-thumb:hover {
+  transform: scaleX(1.1);
+  box-shadow: 0 2px 6px rgba(212, 165, 116, 0.5);
+}
+
+.eq-slider-vertical-small::-moz-range-progress {
+  background: var(--vinyl-accent);
+  width: 6px;
+  border-radius: 3px 3px 0 0;
+}
+
+/* React Tooltip custom styles */
+.react-tooltip {
+  background-color: var(--vinyl-surface) !important;
+  color: var(--vinyl-text) !important;
+  border: 1px solid var(--vinyl-border) !important;
+  border-radius: 8px !important;
+  padding: 8px 12px !important;
+  font-size: 12px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+  z-index: 9999 !important;
+}
+
+.react-tooltip-arrow {
+  border-color: var(--vinyl-border) !important;
+}

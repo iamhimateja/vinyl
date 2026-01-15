@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+
+    <!-- PWA Meta Tags -->
+    <meta
+      name="theme-color"
+      content="#1a1a1a"
+      media="(prefers-color-scheme: dark)"
+    />
+    <meta
+      name="theme-color"
+      content="#f5f5f4"
+      media="(prefers-color-scheme: light)"
+    />
+    <meta name="color-scheme" content="dark light" />
+    <meta
+      name="description"
+      content="A minimal, offline-first music player that feels like a personal vinyl player"
+    />
+    <meta name="application-name" content="Vinyl" />
+    <meta name="mobile-web-app-capable" content="yes" />
+
+    <!-- Apple PWA Meta Tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
+    <meta name="apple-mobile-web-app-title" content="Vinyl" />
+    <meta name="apple-touch-fullscreen" content="yes" />
+
+    <!-- Microsoft PWA Meta Tags -->
+    <meta name="msapplication-TileColor" content="#1a1a1a" />
+    <meta name="msapplication-tap-highlight" content="no" />
+
+    <!-- Links - manifest is auto-injected by vite-plugin-pwa -->
+    <link rel="icon" type="image/svg+xml" href="/icons/icon.svg" />
+    <link rel="apple-touch-icon" href="/icons/icon.svg" />
+    <link rel="mask-icon" href="/icons/icon.svg" color="#d4a574" />
+
+    <title>Vinyl Music Player</title>
+
+    <!-- Inline script to prevent theme flash -->
+    <script>
+      (function () {
+        const saved = localStorage.getItem("vinyl-theme");
+        if (
+          saved === "light" ||
+          (!saved && window.matchMedia("(prefers-color-scheme: light)").matches)
+        ) {
+          document.documentElement.classList.add("light");
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
