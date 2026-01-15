@@ -150,18 +150,6 @@ export function useSongs() {
     try {
       const allSongs = await getAllSongs();
       const sortedSongs = allSongs.reverse(); // Most recent first
-
-      // Debug: Log songs with filePath info
-      console.log("[useSongs] Loaded songs from DB:", sortedSongs.length);
-      const songsWithFilePath = sortedSongs.filter((s) => s.filePath);
-      console.log("[useSongs] Songs with filePath:", songsWithFilePath.length);
-      if (songsWithFilePath.length > 0) {
-        console.log("[useSongs] Sample song with filePath:", {
-          title: songsWithFilePath[0].title,
-          filePath: songsWithFilePath[0].filePath,
-        });
-      }
-
       setSongs(sortedSongs);
       songsRef.current = sortedSongs;
     } catch (error) {
@@ -345,13 +333,10 @@ export function useSongs() {
       folderSongs: Map<string, string[]>;
     }> => {
       if (!isTauri()) {
-        console.warn("importFromFolderPath is only available in Tauri");
         return { imported: 0, skipped: 0, folderSongs: new Map() };
       }
 
-      console.log("[Tauri Import] Scanning folder:", folderPath);
       const files = await scanMusicFolder(folderPath);
-      console.log("[Tauri Import] Found files:", files.length);
 
       if (files.length === 0) {
         return { imported: 0, skipped: 0, folderSongs: new Map() };
@@ -410,10 +395,6 @@ export function useSongs() {
               setSongs((prev) =>
                 prev.map((s) => (s.id === duplicate.id ? updatedSong : s)),
               );
-              console.log(
-                "[Tauri Import] Updated existing song with filePath:",
-                duplicate.title,
-              );
             }
             // Track folder for duplicate
             if (file.folder) {
@@ -440,13 +421,6 @@ export function useSongs() {
             filePath: file.path, // Store full path for desktop
           };
 
-          console.log(
-            "[Tauri Import] Importing song:",
-            song.title,
-            "path:",
-            song.filePath,
-          );
-
           await addSong(song);
           setSongs((prev) => {
             const newSongs = [song, ...prev];
@@ -463,7 +437,7 @@ export function useSongs() {
 
           imported++;
         } catch (error) {
-          console.error("Failed to import file:", file.path, error);
+          console.error("Failed to import:", file.name, error);
         }
 
         setImportProgress({ current: i + 1, total: files.length, skipped });
@@ -472,17 +446,6 @@ export function useSongs() {
       // Save the folder path for future auto-loading
       await saveStoredFolderPath(folderPath);
       setImportProgress(null);
-
-      console.log(
-        "[Tauri Import] Complete. Imported:",
-        imported,
-        "Skipped:",
-        skipped,
-      );
-      console.log(
-        "[Tauri Import] Folders found:",
-        Array.from(folderSongs.keys()),
-      );
 
       return { imported, skipped, folderSongs };
     },
@@ -527,7 +490,6 @@ export function useSongs() {
     // Scan and update any songs that need file path updates
     const files = await scanMusicFolder(storedPath);
     const currentSongs = songsRef.current;
-    let updated = 0;
 
     for (const file of files) {
       // Find songs that match by filename but don't have a filePath
@@ -542,11 +504,9 @@ export function useSongs() {
         setSongs((prev) =>
           prev.map((s) => (s.id === matchingSong.id ? updatedSong : s)),
         );
-        updated++;
       }
     }
 
-    console.log(`Auto-loaded ${updated} songs from stored folder`);
     return true;
   }, []);
 

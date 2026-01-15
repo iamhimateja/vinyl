@@ -1,8 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
-import { useRegisterSW } from "virtual:pwa-register/react";
 
-// Check if running in Tauri
-const isTauri = "__TAURI__" in window;
+// Check if running in Tauri - must be done at module level for tree shaking
+const isTauri = typeof window !== "undefined" && "__TAURI__" in window;
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -13,36 +12,56 @@ export function usePWA() {
   const [installPrompt, setInstallPrompt] =
     useState<BeforeInstallPromptEvent | null>(null);
   const [isInstalled, setIsInstalled] = useState(isTauri); // Consider Tauri as "installed"
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [isOnline, setIsOnline] = useState(
+    typeof navigator !== "undefined" ? navigator.onLine : true,
+  );
+  const [needRefresh, setNeedRefresh] = useState(false);
+  const [offlineReady, setOfflineReady] = useState(false);
   const [isReady, setIsReady] = useState(isTauri); // Tauri is always ready
+  const [updateServiceWorker, setUpdateServiceWorker] = useState<
+    ((reloadPage?: boolean) => Promise<void>) | null
+  >(null);
 
-  // Use vite-plugin-pwa's hook for service worker registration
-  // Only register in web browser, not in Tauri
-  const {
-    needRefresh: [needRefresh, setNeedRefresh],
-    offlineReady: [offlineReady, setOfflineReady],
-    updateServiceWorker,
-  } = useRegisterSW({
-    immediate: !isTauri, // Don't register immediately in Tauri
-    onRegistered(registration) {
-      if (registration && !isTauri) {
-        setIsReady(true);
-        // Check for updates periodically (every hour)
-        setInterval(
-          () => {
-            registration.update();
+  // Register service worker only in web browser (not in Tauri)
+  useEffect(() => {
+    // Skip PWA registration entirely in Tauri
+    if (isTauri) {
+      return;
+    }
+
+    // Dynamic import to avoid loading PWA code in Tauri
+    import("virtual:pwa-register")
+      .then(({ registerSW }) => {
+        const updateSW = registerSW({
+          immediate: true,
+          onNeedRefresh() {
+            setNeedRefresh(true);
           },
-          60 * 60 * 1000,
-        );
-      }
-    },
-    onRegisterError(error) {
-      // Only log error in web browser, not in Tauri
-      if (!isTauri) {
-        console.error("[PWA] Service worker registration error:", error);
-      }
-    },
-  });
+          onOfflineReady() {
+            setOfflineReady(true);
+          },
+          onRegistered(registration) {
+            if (registration) {
+              setIsReady(true);
+              // Check for updates periodically (every hour)
+              setInterval(
+                () => {
+                  registration.update();
+                },
+                60 * 60 * 1000,
+              );
+            }
+          },
+          onRegisterError(error) {
+            console.error("[PWA] Service worker registration error:", error);
+          },
+        });
+        setUpdateServiceWorker(() => updateSW);
+      })
+      .catch((error) => {
+        console.warn("[PWA] Failed to load service worker module:", error);
+      });
+  }, []);
 
   // Track online/offline status
   useEffect(() => {
@@ -59,6 +78,9 @@ export function usePWA() {
   }, []);
 
   useEffect(() => {
+    // Skip in Tauri
+    if (isTauri) return;
+
     // Check if already installed
     const isStandalone =
       window.matchMedia("(display-mode: standalone)").matches ||
@@ -107,13 +129,15 @@ export function usePWA() {
   }, [installPrompt]);
 
   const updateApp = useCallback(() => {
-    updateServiceWorker(true);
+    if (updateServiceWorker) {
+      updateServiceWorker(true);
+    }
     setNeedRefresh(false);
-  }, [updateServiceWorker, setNeedRefresh]);
+  }, [updateServiceWorker]);
 
   const dismissOfflineReady = useCallback(() => {
     setOfflineReady(false);
-  }, [setOfflineReady]);
+  }, []);
 
   return {
     canInstall: !!installPrompt && !isInstalled,

@@ -62,7 +62,14 @@ export function useAudioPlayer(songs: Song[], settings?: AppSettings) {
 
     if (!song || !audioRef.current) return;
 
-    // Revoke previous object URL
+    const audio = audioRef.current;
+
+    // Stop and reset current audio before loading new source
+    audio.pause();
+    audio.currentTime = 0;
+    audio.src = "";
+
+    // Revoke previous blob URL to free memory
     if (objectUrlRef.current) {
       URL.revokeObjectURL(objectUrlRef.current);
       objectUrlRef.current = null;
@@ -77,80 +84,86 @@ export function useAudioPlayer(songs: Song[], settings?: AppSettings) {
 
     setPlaybackState("buffering");
 
-    // Try to get audio source
-    let audioUrl: string | null = null;
+    try {
+      // Try to get audio source
+      let audioUrl: string | null = null;
 
-    console.log("[AudioPlayer] Playing song:", song.title);
-    console.log("[AudioPlayer] isTauri:", isTauri());
-    console.log("[AudioPlayer] song.filePath:", song.filePath);
+      // On desktop with file path, read file and create blob URL
+      if (isTauri() && song.filePath) {
+        const exists = await fileExists(song.filePath);
+        if (exists) {
+          audioUrl = await getAssetUrl(song.filePath);
+          // getAssetUrl now returns blob URLs that need cleanup
+          if (audioUrl) {
+            objectUrlRef.current = audioUrl;
+          }
+        }
+      }
 
-    // On desktop with file path, use asset protocol
-    if (isTauri() && song.filePath) {
-      // Verify file still exists
-      const exists = await fileExists(song.filePath);
-      console.log("[AudioPlayer] fileExists:", exists);
-
-      if (exists) {
-        audioUrl = await getAssetUrl(song.filePath);
-        console.log("[AudioPlayer] Asset URL:", audioUrl);
-        // Store for cleanup (getAssetUrl creates blob URLs that need revoking)
-        if (audioUrl) {
+      // Fall back to memory cache (web or desktop without filePath)
+      if (!audioUrl) {
+        const cachedFile = getCachedFile(song.id);
+        if (cachedFile) {
+          audioUrl = URL.createObjectURL(cachedFile);
           objectUrlRef.current = audioUrl;
         }
       }
-    }
 
-    // Fall back to memory cache (web or desktop without filePath)
-    if (!audioUrl) {
-      const cachedFile = getCachedFile(song.id);
-      console.log(
-        "[AudioPlayer] Cached file:",
-        cachedFile ? "found" : "not found",
-      );
-      if (cachedFile) {
-        objectUrlRef.current = URL.createObjectURL(cachedFile);
-        audioUrl = objectUrlRef.current;
+      if (!audioUrl) {
+        console.warn("No audio source for:", song.title);
+        setPlaybackState("idle");
+        setPlayerState((prev) => ({ ...prev, isPlaying: false }));
+        return;
       }
-    }
 
-    if (!audioUrl) {
-      // No audio source available - file needs to be reconnected
-      console.error(
-        "No audio source available for song:",
-        song.title,
-        "- connect your music folder",
-      );
-      console.error("[AudioPlayer] Debug info:", {
-        isTauri: isTauri(),
-        filePath: song.filePath,
-        songId: song.id,
+      // Small delay to let the audio element reset
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      audio.src = audioUrl;
+      audio.playbackRate = state.speed;
+
+      // Setup Media Session (skip artwork to avoid potential issues with large images)
+      if ("mediaSession" in navigator) {
+        try {
+          navigator.mediaSession.metadata = new MediaMetadata({
+            title: song.title,
+            artist: song.artist,
+            album: song.album,
+          });
+        } catch {
+          // Ignore Media Session errors
+        }
+      }
+
+      // Wait for canplay event before playing
+      await new Promise<void>((resolve, reject) => {
+        const onCanPlay = () => {
+          audio.removeEventListener("canplay", onCanPlay);
+          audio.removeEventListener("error", onError);
+          resolve();
+        };
+        const onError = () => {
+          audio.removeEventListener("canplay", onCanPlay);
+          audio.removeEventListener("error", onError);
+          reject(new Error("Audio load error"));
+        };
+        audio.addEventListener("canplay", onCanPlay);
+        audio.addEventListener("error", onError);
+
+        // Timeout after 10 seconds
+        setTimeout(() => {
+          audio.removeEventListener("canplay", onCanPlay);
+          audio.removeEventListener("error", onError);
+          resolve(); // Try to play anyway
+        }, 10000);
       });
-      setPlaybackState("idle");
-      setPlayerState((prev) => ({ ...prev, isPlaying: false }));
-      return;
-    }
 
-    audioRef.current.src = audioUrl;
-
-    // Apply current playback speed
-    audioRef.current.playbackRate = state.speed;
-
-    // Setup Media Session
-    if ("mediaSession" in navigator) {
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: song.title,
-        artist: song.artist,
-        album: song.album,
-        artwork: song.coverArt ? [{ src: song.coverArt }] : [],
-      });
-    }
-
-    try {
-      await audioRef.current.play();
+      await audio.play();
       setPlaybackState("playing");
     } catch (error) {
       console.error("Playback failed:", error);
       setPlaybackState("idle");
+      setPlayerState((prev) => ({ ...prev, isPlaying: false }));
     }
   }, []);
 
@@ -265,6 +278,7 @@ export function useAudioPlayer(songs: Song[], settings?: AppSettings) {
       audio.removeEventListener("canplay", handleCanPlay);
       audio.removeEventListener("error", handleError);
       audio.pause();
+      // Only revoke blob URLs
       if (objectUrlRef.current) {
         URL.revokeObjectURL(objectUrlRef.current);
       }
@@ -347,134 +361,123 @@ export function useAudioPlayer(songs: Song[], settings?: AppSettings) {
     ): Promise<boolean> => {
       if (!audioRef.current) return false;
 
+      const audio = audioRef.current;
+
       // If a user-initiated load, always proceed (and mark as loading)
       // If not user-initiated (like restore), skip if already loading
       if (isUserInitiated) {
         isLoadingRef.current = true;
       } else if (isLoadingRef.current) {
-        console.log(
-          "[AudioPlayer:loadSong] Skipping non-user load - already loading",
-        );
         return false;
       }
 
-      // Revoke previous object URL
+      // Stop and reset current audio before loading new source
+      audio.pause();
+      audio.currentTime = 0;
+      audio.src = "";
+
+      // Revoke previous blob URL (only blob: URLs need revoking)
       if (objectUrlRef.current) {
         URL.revokeObjectURL(objectUrlRef.current);
-        objectUrlRef.current = null;
       }
+      objectUrlRef.current = null;
 
       setPlaybackState("buffering");
 
       let audioUrl: string | null = null;
 
-      // Very visible debug output
-      const debugInfo = {
-        title: song.title,
-        isTauri: isTauri(),
-        filePath: song.filePath,
-        hasFilePath: !!song.filePath,
-        songId: song.id,
-      };
-      console.log("[AudioPlayer:loadSong] ========== LOADING SONG ==========");
-      console.log(
-        "[AudioPlayer:loadSong] Debug:",
-        JSON.stringify(debugInfo, null, 2),
-      );
+      try {
+        // On desktop with file path, read file and create blob URL
+        if (isTauri() && song.filePath) {
+          const exists = await fileExists(song.filePath);
 
-      // Temporary alert for debugging - remove after fix
-      // alert(`Loading: ${song.title}\nisTauri: ${isTauri()}\nfilePath: ${song.filePath || 'NONE'}`);
+          if (exists) {
+            audioUrl = await getAssetUrl(song.filePath);
+            // getAssetUrl now returns blob URLs that need cleanup
+            if (audioUrl) {
+              objectUrlRef.current = audioUrl;
+            }
+          }
+        }
 
-      // On desktop with file path, use asset protocol
-      if (isTauri() && song.filePath) {
-        // Verify file still exists
-        const exists = await fileExists(song.filePath);
-        console.log("[AudioPlayer:loadSong] fileExists:", exists);
-
-        if (exists) {
-          audioUrl = await getAssetUrl(song.filePath);
-          console.log("[AudioPlayer:loadSong] Asset URL:", audioUrl);
-          // Store for cleanup (getAssetUrl creates blob URLs that need revoking)
-          if (audioUrl) {
+        // Fall back to memory cache (web or desktop without filePath)
+        if (!audioUrl) {
+          const cachedFile = getCachedFile(song.id);
+          if (cachedFile) {
+            audioUrl = URL.createObjectURL(cachedFile);
             objectUrlRef.current = audioUrl;
           }
         }
-      }
 
-      // Fall back to memory cache (web or desktop without filePath)
-      if (!audioUrl) {
-        const cachedFile = getCachedFile(song.id);
-        console.log(
-          "[AudioPlayer:loadSong] Cached file:",
-          cachedFile ? "found" : "not found",
-        );
-        if (cachedFile) {
-          objectUrlRef.current = URL.createObjectURL(cachedFile);
-          audioUrl = objectUrlRef.current;
+        if (!audioUrl) {
+          // No audio source available - file needs to be reconnected
+          console.warn("No audio source for:", song.title);
+          setPlaybackState("idle");
+          isLoadingRef.current = false;
+          return false;
         }
-      }
 
-      if (!audioUrl) {
-        // No audio source available - file needs to be reconnected
-        console.error(
-          "No audio source available for song:",
-          song.title,
-          "- connect your music folder",
-        );
-        console.error("[AudioPlayer:loadSong] Debug info:", {
-          isTauri: isTauri(),
-          filePath: song.filePath,
-          songId: song.id,
-        });
+        // Small delay to let audio element reset
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        audio.src = audioUrl;
+
+        // Setup Media Session (skip artwork to avoid potential issues with large images)
+        if ("mediaSession" in navigator) {
+          try {
+            navigator.mediaSession.metadata = new MediaMetadata({
+              title: song.title,
+              artist: song.artist,
+              album: song.album,
+            });
+          } catch {
+            // Ignore Media Session errors
+          }
+        }
+
+        // If a start position is provided, wait for audio to be ready and seek
+        if (
+          startPosition !== undefined &&
+          startPosition > 0 &&
+          audioRef.current
+        ) {
+          await new Promise<void>((resolve) => {
+            const handleCanPlay = () => {
+              audio.currentTime = startPosition;
+              setCurrentTime(startPosition);
+              audio.removeEventListener("canplay", handleCanPlay);
+              resolve();
+            };
+            audio.addEventListener("canplay", handleCanPlay);
+
+            // Also handle case where audio is already ready
+            if (audio.readyState >= 3) {
+              audio.removeEventListener("canplay", handleCanPlay);
+              audio.currentTime = startPosition;
+              setCurrentTime(startPosition);
+              resolve();
+            }
+
+            // Timeout to prevent hanging
+            setTimeout(() => {
+              audio.removeEventListener("canplay", handleCanPlay);
+              resolve();
+            }, 5000);
+          });
+        }
+
+        // Clear loading flag after a short delay to prevent immediate re-triggers
+        setTimeout(() => {
+          isLoadingRef.current = false;
+        }, 100);
+
+        return true;
+      } catch (error) {
+        console.error("Error loading song:", error);
         setPlaybackState("idle");
-        isLoadingRef.current = false; // Reset loading flag on failure
+        isLoadingRef.current = false;
         return false;
       }
-
-      audioRef.current.src = audioUrl;
-
-      // Setup Media Session
-      if ("mediaSession" in navigator) {
-        navigator.mediaSession.metadata = new MediaMetadata({
-          title: song.title,
-          artist: song.artist,
-          album: song.album,
-          artwork: song.coverArt ? [{ src: song.coverArt }] : [],
-        });
-      }
-
-      // If a start position is provided, wait for audio to be ready and seek
-      if (
-        startPosition !== undefined &&
-        startPosition > 0 &&
-        audioRef.current
-      ) {
-        const audio = audioRef.current;
-        await new Promise<void>((resolve) => {
-          const handleCanPlay = () => {
-            audio.currentTime = startPosition;
-            setCurrentTime(startPosition);
-            audio.removeEventListener("canplay", handleCanPlay);
-            resolve();
-          };
-          audio.addEventListener("canplay", handleCanPlay);
-
-          // Also handle case where audio is already ready
-          if (audio.readyState >= 3) {
-            audio.removeEventListener("canplay", handleCanPlay);
-            audio.currentTime = startPosition;
-            setCurrentTime(startPosition);
-            resolve();
-          }
-        });
-      }
-
-      // Clear loading flag after a short delay to prevent immediate re-triggers
-      setTimeout(() => {
-        isLoadingRef.current = false;
-      }, 100);
-
-      return true;
     },
     [],
   );
@@ -519,73 +522,49 @@ export function useAudioPlayer(songs: Song[], settings?: AppSettings) {
 
   // Play a specific song
   const playSong = async (song: Song, playlistId?: string | null) => {
-    // Debug: log the song being played
-    console.log("[AudioPlayer:playSong] Called with song:", {
-      id: song.id,
-      title: song.title,
-      filePath: song.filePath,
-      hasFilePath: !!song.filePath,
-    });
+    try {
+      // Use the song from our array if it has more complete data (e.g., filePath)
+      const songInArray = songs.find((s) => s.id === song.id);
+      const songToPlay = songInArray?.filePath ? songInArray : song;
 
-    // Also check if this song exists in our songs array with filePath
-    const songInArray = songs.find((s) => s.id === song.id);
-    console.log(
-      "[AudioPlayer:playSong] Song in songs array:",
-      songInArray
-        ? {
-            id: songInArray.id,
-            title: songInArray.title,
-            filePath: songInArray.filePath,
-            hasFilePath: !!songInArray.filePath,
-          }
-        : "NOT FOUND",
-    );
+      const queue = playerState.shuffle
+        ? shuffleArray(songs.map((s) => s.id))
+        : songs.map((s) => s.id);
 
-    // Use the song from our array if it has more complete data
-    const songToPlay = songInArray?.filePath ? songInArray : song;
-    console.log(
-      "[AudioPlayer:playSong] Using song:",
-      songToPlay.filePath ? "from array" : "from param",
-    );
+      const queueIndex = queue.indexOf(songToPlay.id);
 
-    const queue = playerState.shuffle
-      ? shuffleArray(songs.map((s) => s.id))
-      : songs.map((s) => s.id);
+      setPlayerState((prev) => ({
+        ...prev,
+        currentSongId: songToPlay.id,
+        isPlaying: true,
+        queue,
+        queueIndex: queueIndex >= 0 ? queueIndex : 0,
+        currentPlaylistId:
+          playlistId !== undefined ? playlistId : prev.currentPlaylistId,
+      }));
 
-    const queueIndex = queue.indexOf(songToPlay.id);
+      // Mark hasRestoredSong to prevent restore effect from interfering
+      hasRestoredSong.current = true;
 
-    setPlayerState((prev) => ({
-      ...prev,
-      currentSongId: songToPlay.id,
-      isPlaying: true,
-      queue,
-      queueIndex: queueIndex >= 0 ? queueIndex : 0,
-      currentPlaylistId:
-        playlistId !== undefined ? playlistId : prev.currentPlaylistId,
-    }));
+      const loaded = await loadSong(songToPlay, undefined, true); // User-initiated
 
-    // Mark hasRestoredSong to prevent restore effect from interfering
-    hasRestoredSong.current = true;
+      if (!loaded) {
+        // Audio source not available - reset state
+        setPlayerState((prev) => ({ ...prev, isPlaying: false }));
+        return;
+      }
 
-    const loaded = await loadSong(songToPlay, undefined, true); // User-initiated
+      if (audioRef.current) {
+        // Apply current playback speed
+        audioRef.current.playbackRate = playerState.speed;
 
-    if (!loaded) {
-      // Audio source not available - reset state
-      setPlayerState((prev) => ({ ...prev, isPlaying: false }));
-      return;
-    }
-
-    if (audioRef.current) {
-      // Apply current playback speed
-      audioRef.current.playbackRate = playerState.speed;
-
-      try {
         await audioRef.current.play();
         setPlaybackState("playing");
-      } catch (error) {
-        console.error("Playback failed:", error);
-        setPlaybackState("idle");
       }
+    } catch (error) {
+      console.error("playSong failed:", error);
+      setPlaybackState("idle");
+      setPlayerState((prev) => ({ ...prev, isPlaying: false }));
     }
   };
 
@@ -795,11 +774,11 @@ export function useAudioPlayer(songs: Song[], settings?: AppSettings) {
         audioRef.current.currentTime = 0;
       }
 
-      // Clear the object URL
+      // Clear the object URL (only revoke blob: URLs)
       if (objectUrlRef.current) {
         URL.revokeObjectURL(objectUrlRef.current);
-        objectUrlRef.current = null;
       }
+      objectUrlRef.current = null;
 
       setPlaybackState("idle");
       setCurrentTime(0);

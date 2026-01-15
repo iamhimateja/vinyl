@@ -6,19 +6,33 @@ import App from "./App.tsx";
 import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
 import { TooltipProvider } from "./components/Tooltip.tsx";
 
-// Service worker is auto-registered by vite-plugin-pwa
+// Global error handler for uncaught errors
+window.onerror = (message, _source, _lineno, _colno, error) => {
+  console.error("Uncaught error:", message, error);
+  return false;
+};
+
+window.onunhandledrejection = (event) => {
+  console.error("Unhandled rejection:", event.reason);
+};
 
 // Use HashRouter for Tauri (file:// protocol doesn't support BrowserRouter well)
 const isTauri = "__TAURI__" in window;
 const Router = isTauri ? HashRouter : BrowserRouter;
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
+const root = document.getElementById("root");
+if (root) {
+  // Disable StrictMode in Tauri to avoid double-effect issues
+  const content = (
     <ErrorBoundary>
       <Router>
         <App />
         <TooltipProvider />
       </Router>
     </ErrorBoundary>
-  </StrictMode>,
-);
+  );
+
+  createRoot(root).render(
+    isTauri ? content : <StrictMode>{content}</StrictMode>,
+  );
+}
