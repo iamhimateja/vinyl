@@ -12,11 +12,17 @@ import {
   RotateCcw,
   Save,
   Type,
+  Trash2,
+  AlertTriangle,
+  Activity,
 } from "lucide-react";
 import type { AppSettings, RepeatMode, QueueBehavior } from "../types";
 import type { EqualizerBand, EqualizerPreset } from "../hooks/useEqualizer";
 import { EQUALIZER_PRESETS } from "../hooks/useEqualizer";
 import { tooltipProps } from "./Tooltip";
+import { ConfirmDialog } from "./ConfirmDialog";
+import { LibrarySettings } from "./LibrarySettings";
+import type { MusicFileInfo, LibraryScanResult } from "../lib/platform";
 
 interface SettingsViewProps {
   settings: AppSettings;
@@ -25,6 +31,8 @@ interface SettingsViewProps {
     value: AppSettings[K],
   ) => void;
   onResetSettings: () => void;
+  /** Reset entire player - clears all data */
+  onResetPlayer: () => Promise<void>;
   // Equalizer props
   eqBands: EqualizerBand[];
   eqEnabled: boolean;
@@ -34,6 +42,25 @@ interface SettingsViewProps {
   onEqPresetChange: (preset: EqualizerPreset) => void;
   onEqReset: () => void;
   onEqToggleEnabled: () => void;
+  // Library props
+  libraryFolders: string[];
+  libraryIsScanning: boolean;
+  libraryScanProgress: {
+    current: number;
+    total: number;
+    currentFolder: string;
+  } | null;
+  libraryLastScanResult: LibraryScanResult | null;
+  libraryError: string | null;
+  libraryIsDesktop: boolean;
+  libraryIsWatching: boolean;
+  totalSongsInLibrary: number;
+  onLibraryAddFolder: () => Promise<string | null>;
+  onLibraryRemoveFolder: (folderPath: string) => Promise<boolean>;
+  onLibraryScanFolder: (folderPath: string) => Promise<MusicFileInfo[]>;
+  onLibraryScanAllFolders: () => Promise<MusicFileInfo[]>;
+  onLibraryImportFiles: (files: MusicFileInfo[]) => Promise<void>;
+  onLibraryClearError: () => void;
 }
 
 const APP_ICONS = [
@@ -47,6 +74,7 @@ export function SettingsView({
   settings,
   onUpdateSetting,
   onResetSettings,
+  onResetPlayer,
   eqBands,
   eqEnabled,
   eqPreset,
@@ -55,9 +83,26 @@ export function SettingsView({
   onEqPresetChange,
   onEqReset,
   onEqToggleEnabled,
+  // Library props
+  libraryFolders,
+  libraryIsScanning,
+  libraryScanProgress,
+  libraryLastScanResult,
+  libraryError,
+  libraryIsDesktop,
+  libraryIsWatching,
+  totalSongsInLibrary,
+  onLibraryAddFolder,
+  onLibraryRemoveFolder,
+  onLibraryScanFolder,
+  onLibraryScanAllFolders,
+  onLibraryImportFiles,
+  onLibraryClearError,
 }: SettingsViewProps) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [tempTitle, setTempTitle] = useState(settings.appTitle);
+  const [showResetPlayerDialog, setShowResetPlayerDialog] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
 
   const handleTitleSave = () => {
     onUpdateSetting("appTitle", tempTitle.trim() || "Vinyl");
@@ -79,6 +124,24 @@ export function SettingsView({
           Reset All
         </button>
       </div>
+
+      {/* Music Library Section */}
+      <LibrarySettings
+        folders={libraryFolders}
+        isScanning={libraryIsScanning}
+        scanProgress={libraryScanProgress}
+        lastScanResult={libraryLastScanResult}
+        error={libraryError}
+        isDesktop={libraryIsDesktop}
+        isWatching={libraryIsWatching}
+        totalSongsInLibrary={totalSongsInLibrary}
+        onAddFolder={onLibraryAddFolder}
+        onRemoveFolder={onLibraryRemoveFolder}
+        onScanFolder={onLibraryScanFolder}
+        onScanAllFolders={onLibraryScanAllFolders}
+        onImportFiles={onLibraryImportFiles}
+        onClearError={onLibraryClearError}
+      />
 
       {/* Appearance Section */}
       <section className="bg-vinyl-surface border border-vinyl-border rounded-lg overflow-hidden">
@@ -120,6 +183,40 @@ export function SettingsView({
                 <Moon className="w-4 h-4" />
                 Dark
               </button>
+            </div>
+          </div>
+
+          {/* Accent Color */}
+          <div className="space-y-3">
+            <div>
+              <h3 className="text-vinyl-text font-medium">Accent Color</h3>
+              <p className="text-sm text-vinyl-text-muted">
+                Choose your preferred accent color
+              </p>
+            </div>
+            <div className="flex items-center gap-3 flex-wrap">
+              {[
+                { color: "#d4a574", name: "Gold" },
+                { color: "#8B5CF6", name: "Purple" },
+                { color: "#06B6D4", name: "Cyan" },
+                { color: "#10B981", name: "Emerald" },
+                { color: "#F43F5E", name: "Rose" },
+                { color: "#F97316", name: "Orange" },
+                { color: "#3B82F6", name: "Blue" },
+                { color: "#EC4899", name: "Pink" },
+              ].map(({ color, name }) => (
+                <button
+                  key={color}
+                  onClick={() => onUpdateSetting("accentColor", color)}
+                  className={`w-8 h-8 rounded-full transition-all ${
+                    settings.accentColor === color
+                      ? "ring-2 ring-white ring-offset-2 ring-offset-vinyl-surface scale-110"
+                      : "hover:scale-110"
+                  }`}
+                  style={{ backgroundColor: color }}
+                  title={name}
+                />
+              ))}
             </div>
           </div>
 
@@ -522,6 +619,174 @@ export function SettingsView({
           )}
         </div>
       </section>
+
+      {/* Now Playing Display Section */}
+      <section className="bg-vinyl-surface border border-vinyl-border rounded-lg overflow-hidden">
+        <div className="px-4 py-3 border-b border-vinyl-border bg-vinyl-border/20">
+          <h2 className="font-semibold text-vinyl-text flex items-center gap-2">
+            <Activity className="w-5 h-5 text-vinyl-accent" />
+            Now Playing Display
+          </h2>
+        </div>
+        <div className="p-4 space-y-4">
+          {/* Display Mode */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-vinyl-text font-medium">Display Mode</h3>
+              <p className="text-sm text-vinyl-text-muted">
+                Main visual in Now Playing
+              </p>
+            </div>
+            <div className="flex bg-vinyl-border rounded-lg p-1">
+              <button
+                onClick={() => onUpdateSetting("displayMode", "vinyl")}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm transition-colors ${
+                  settings.displayMode === "vinyl"
+                    ? "bg-vinyl-accent text-vinyl-bg"
+                    : "text-vinyl-text-muted hover:text-vinyl-text"
+                }`}
+              >
+                <Disc3 className="w-4 h-4" />
+                Vinyl
+              </button>
+              <button
+                onClick={() => onUpdateSetting("displayMode", "albumArt")}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm transition-colors ${
+                  settings.displayMode === "albumArt"
+                    ? "bg-vinyl-accent text-vinyl-bg"
+                    : "text-vinyl-text-muted hover:text-vinyl-text"
+                }`}
+              >
+                <Music className="w-4 h-4" />
+                Album Art
+              </button>
+            </div>
+          </div>
+
+          {/* Enable Visualizer */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-vinyl-text font-medium">
+                Background Visualizer
+              </h3>
+              <p className="text-sm text-vinyl-text-muted">
+                Animated audio visualization behind display
+              </p>
+            </div>
+            <ToggleSwitch
+              enabled={settings.visualizerEnabled}
+              onChange={(v) => onUpdateSetting("visualizerEnabled", v)}
+            />
+          </div>
+
+          {/* Visualizer Style - only show when enabled */}
+          {settings.visualizerEnabled && (
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-vinyl-text font-medium">
+                  Visualizer Style
+                </h3>
+                <p className="text-sm text-vinyl-text-muted">
+                  Choose visualizer animation
+                </p>
+              </div>
+              <select
+                value={settings.visualizerStyle}
+                onChange={(e) =>
+                  onUpdateSetting(
+                    "visualizerStyle",
+                    e.target.value as typeof settings.visualizerStyle,
+                  )
+                }
+                className="px-3 py-1.5 bg-vinyl-border text-vinyl-text rounded text-sm border-0 cursor-pointer"
+              >
+                <option value="bars">Bars</option>
+                <option value="wave">Wave</option>
+                <option value="areaWave">Area Wave</option>
+              </select>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Confirmations Section */}
+      <section className="bg-vinyl-surface border border-vinyl-border rounded-lg overflow-hidden">
+        <div className="px-4 py-3 border-b border-vinyl-border bg-vinyl-border/20">
+          <h2 className="font-semibold text-vinyl-text flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 text-vinyl-accent" />
+            Confirmations
+          </h2>
+        </div>
+        <div className="p-4 space-y-4">
+          {/* Skip Delete Confirmation */}
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-vinyl-text font-medium">
+                Skip Delete Confirmation
+              </p>
+              <p className="text-vinyl-text-muted text-sm">
+                Delete songs immediately without confirmation dialog
+              </p>
+            </div>
+            <ToggleSwitch
+              enabled={settings.skipDeleteConfirmation}
+              onChange={(enabled) =>
+                onUpdateSetting("skipDeleteConfirmation", enabled)
+              }
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* Danger Zone Section */}
+      <section className="bg-red-500/5 border border-red-500/20 rounded-lg overflow-hidden">
+        <div className="px-4 py-3 border-b border-red-500/20 bg-red-500/10">
+          <h2 className="font-semibold text-red-400 flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5" />
+            Danger Zone
+          </h2>
+        </div>
+        <div className="p-4 space-y-4">
+          {/* Reset Player */}
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-vinyl-text font-medium">Reset Player</p>
+              <p className="text-vinyl-text-muted text-sm">
+                Clear all music, playlists, settings, and start fresh
+              </p>
+            </div>
+            <button
+              onClick={() => setShowResetPlayerDialog(true)}
+              disabled={isResetting}
+              className="flex items-center gap-2 px-4 py-2 bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/30 transition-colors disabled:opacity-50"
+            >
+              <Trash2 className="w-4 h-4" />
+              {isResetting ? "Resetting..." : "Reset Everything"}
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* Reset Player Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={showResetPlayerDialog}
+        title="Reset Player?"
+        message="This will permanently delete all your music, playlists, favorites, and settings. The app will restart in its original state."
+        warningText="⚠️ This action cannot be undone! All your imported music and playlists will be lost forever."
+        confirmLabel={isResetting ? "Resetting..." : "Yes, Reset Everything"}
+        cancelLabel="Cancel"
+        variant="danger"
+        onConfirm={async () => {
+          setIsResetting(true);
+          try {
+            await onResetPlayer();
+          } finally {
+            setIsResetting(false);
+            setShowResetPlayerDialog(false);
+          }
+        }}
+        onCancel={() => setShowResetPlayerDialog(false)}
+      />
     </div>
   );
 }

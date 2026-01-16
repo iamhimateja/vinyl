@@ -23,6 +23,17 @@ import { useAudioPlayer } from "./hooks/useAudioPlayer";
 import { useEqualizer } from "./hooks/useEqualizer";
 import { useSettings } from "./hooks/useSettings";
 import { usePWA } from "./hooks/usePWA";
+import { useSleepTimer } from "./hooks/useSleepTimer";
+import { useAudioVisualizer } from "./hooks/useAudioVisualizer";
+import { useLibrary } from "./hooks/useLibrary";
+import { clearAllData } from "./lib/db";
+import {
+  isDesktop as checkIsDesktop,
+  clearStoredData,
+  isFirstLaunch,
+  completeSetup,
+} from "./lib/platform";
+import { FirstLaunchWizard } from "./components/FirstLaunchWizard";
 import type { Playlist, Song } from "./types";
 import {
   ArrowLeft,
@@ -51,6 +62,8 @@ interface PlaylistDetailPageProps {
   updatePlaylist: (playlistId: string, updates: Partial<Playlist>) => void;
   handleDeleteSong: (songId: string) => void;
   toggleFavorite: (songId: string) => void;
+  skipDeleteConfirmation: boolean;
+  onSkipDeleteConfirmationChange: (skip: boolean) => void;
 }
 
 function PlaylistDetailPage({
@@ -69,6 +82,8 @@ function PlaylistDetailPage({
   updatePlaylist,
   handleDeleteSong,
   toggleFavorite,
+  skipDeleteConfirmation,
+  onSkipDeleteConfirmationChange,
 }: PlaylistDetailPageProps) {
   const { playlistId } = useParams<{ playlistId: string }>();
   const playlist = playlists.find((p) => p.id === playlistId);
@@ -151,6 +166,8 @@ function PlaylistDetailPage({
           onDeleteSong={handleDeleteSong}
           favoriteSongIds={favoriteSongIds}
           onToggleFavorite={toggleFavorite}
+          skipDeleteConfirmation={skipDeleteConfirmation}
+          onSkipDeleteConfirmationChange={onSkipDeleteConfirmationChange}
         />
       </div>
     </div>
@@ -163,6 +180,8 @@ function App() {
   const [unavailableSongIds, setUnavailableSongIds] = useState<Set<string>>(
     new Set(),
   );
+  const [showFirstLaunchWizard, setShowFirstLaunchWizard] = useState(false);
+  const [checkingFirstLaunch, setCheckingFirstLaunch] = useState(true);
 
   const { settings, updateSetting, resetSettings } = useSettings();
   const {
@@ -192,7 +211,15 @@ function App() {
     connectFolder,
     connectedCount,
     totalCount,
+    // Desktop-specific
+    isDesktop,
+    pickAndImportFolder,
+    autoLoadStoredFolder,
+    importFromMusicFileInfos,
   } = useSongs();
+
+  // Music library management (desktop only)
+  const library = useLibrary();
   const {
     playlists,
     favoriteSongIds,
@@ -231,6 +258,7 @@ function App() {
     toggleShuffle,
     setSpeed,
     removeSongFromQueue,
+    reorderQueue,
   } = useAudioPlayer(songs, settings);
 
   // Initialize equalizer with audio element
@@ -245,6 +273,15 @@ function App() {
     toggleEnabled: toggleEqualizer,
   } = useEqualizer(audioElement);
 
+  // Sleep timer - stops playback when timer ends
+  const sleepTimer = useSleepTimer(stop);
+
+  // Audio visualizer - only active when visualizer is enabled
+  const { frequencyData, waveformData } = useAudioVisualizer(
+    audioElement,
+    settings.visualizerEnabled && isPlaying,
+  );
+
   // Get current playlist object
   const currentPlaylist =
     playlists.find((p) => p.id === currentPlaylistId) || null;
@@ -255,6 +292,30 @@ function App() {
       setHasInitialized(true);
     }
   }, [isLoading, hasInitialized]);
+
+  // Check if this is first launch (desktop only)
+  useEffect(() => {
+    const checkFirstLaunch = async () => {
+      // Only show wizard on desktop
+      if (!checkIsDesktop()) {
+        setCheckingFirstLaunch(false);
+        return;
+      }
+
+      const firstLaunch = await isFirstLaunch();
+      setShowFirstLaunchWizard(firstLaunch);
+      setCheckingFirstLaunch(false);
+    };
+
+    checkFirstLaunch();
+  }, []);
+
+  // Tauri: Auto-load stored folder on startup
+  useEffect(() => {
+    if (isDesktop && hasInitialized && autoLoadStoredFolder) {
+      autoLoadStoredFolder();
+    }
+  }, [isDesktop, hasInitialized, autoLoadStoredFolder]);
 
   // Check for unavailable songs (files not in memory) after songs load or connection changes
   useEffect(() => {
@@ -364,6 +425,66 @@ function App() {
     return { imported: totalImported, skipped: totalSkipped };
   };
 
+  // Create playlists from folder structure (used by Tauri imports)
+  const handleCreatePlaylistsFromFolders = async (
+    folderSongs: Map<string, string[]>,
+  ): Promise<number> => {
+    let playlistsCreated = 0;
+
+    // Get folder names with conflict resolution
+    const playlistNames = new Map<string, string>();
+    const folderNameCount = new Map<string, string[]>();
+
+    // Count how many folders share each base name
+    for (const folderPath of folderSongs.keys()) {
+      const parts = folderPath.split(/[/\\]/); // Support both Unix and Windows paths
+      const folderName = parts[parts.length - 1] || folderPath;
+
+      if (!folderNameCount.has(folderName)) {
+        folderNameCount.set(folderName, []);
+      }
+      folderNameCount.get(folderName)!.push(folderPath);
+    }
+
+    // Assign playlist names - prepend parent folder name for conflicts
+    for (const folderPath of folderSongs.keys()) {
+      const parts = folderPath.split(/[/\\]/);
+      const folderName = parts[parts.length - 1] || folderPath;
+      const conflictingPaths = folderNameCount.get(folderName) || [];
+
+      if (conflictingPaths.length > 1 && parts.length > 1) {
+        // Name conflict exists - use "Parent - FolderName" format
+        const parentName = parts[parts.length - 2];
+        playlistNames.set(folderPath, `${parentName} - ${folderName}`);
+      } else {
+        playlistNames.set(folderPath, folderName);
+      }
+    }
+
+    // Create playlists for each folder
+    for (const [folderPath, songIds] of folderSongs) {
+      if (songIds.length === 0) continue;
+
+      const playlistName = playlistNames.get(folderPath) || folderPath;
+
+      // Check if a playlist with this name already exists
+      const existingPlaylist = playlists.find(
+        (p) => p.name.toLowerCase() === playlistName.toLowerCase(),
+      );
+
+      if (existingPlaylist) {
+        // Add songs to existing playlist (duplicates are filtered automatically)
+        await addSongsToPlaylist(existingPlaylist.id, songIds);
+      } else {
+        // Create new playlist
+        await createPlaylist(playlistName, songIds);
+        playlistsCreated++;
+      }
+    }
+
+    return playlistsCreated;
+  };
+
   // Handle song deletion - stops playback if needed, removes from queue and all playlists
   const handleDeleteSong = async (songId: string) => {
     // Remove from queue (this also stops playback if it's the current song)
@@ -375,6 +496,82 @@ function App() {
     // Delete from library
     await deleteSong(songId);
   };
+
+  // Reset entire player - clears all data and reloads
+  const handleResetPlayer = async () => {
+    // Stop any playing audio
+    stop();
+
+    // Clear all IndexedDB data
+    await clearAllData();
+
+    // Clear localStorage
+    localStorage.clear();
+
+    // Clear electron-store data on desktop
+    if (checkIsDesktop()) {
+      await clearStoredData();
+    }
+
+    // Reload the page to reset all state
+    window.location.reload();
+  };
+
+  // Set up library file watcher callbacks for auto-import
+  useEffect(() => {
+    if (!library.isDesktop) return;
+
+    // Handle new files detected by watcher
+    library.setOnFileAdded(async (file) => {
+      console.log("[App] Auto-importing new file:", file.path);
+      try {
+        await importFromMusicFileInfos([file]);
+      } catch (error) {
+        console.error("[App] Failed to auto-import file:", error);
+      }
+    });
+
+    // Handle removed files detected by watcher
+    library.setOnFileRemoved((filePath) => {
+      console.log("[App] File removed:", filePath);
+      // Find and remove the song with this file path
+      const songToRemove = songs.find((s) => s.filePath === filePath);
+      if (songToRemove) {
+        handleDeleteSong(songToRemove.id);
+      }
+    });
+
+    return () => {
+      library.setOnFileAdded(null);
+      library.setOnFileRemoved(null);
+    };
+  }, [
+    library.isDesktop,
+    library.setOnFileAdded,
+    library.setOnFileRemoved,
+    importFromMusicFileInfos,
+    songs,
+  ]);
+
+  // Handle first launch wizard completion
+  const handleWizardComplete = useCallback(async () => {
+    await completeSetup();
+    setShowFirstLaunchWizard(false);
+  }, []);
+
+  // Handle first launch wizard skip
+  const handleWizardSkip = useCallback(async () => {
+    await completeSetup();
+    setShowFirstLaunchWizard(false);
+  }, []);
+
+  // Handle skip delete confirmation change
+  const handleSkipDeleteConfirmationChange = useCallback(
+    (skip: boolean) => {
+      updateSetting("skipDeleteConfirmation", skip);
+    },
+    [updateSetting],
+  );
 
   const handleSelectPlaylist = (playlist: Playlist) => {
     navigate(`/playlists/${playlist.id}`);
@@ -446,10 +643,13 @@ function App() {
             <ImportMusic
               onImport={handleImport}
               onConnectFolder={connectFolder}
+              onPickAndImportFolder={pickAndImportFolder}
+              onCreatePlaylistsFromFolders={handleCreatePlaylistsFromFolders}
               isImporting={!!importProgress}
               importProgress={importProgress}
               connectedCount={connectedCount}
               totalCount={totalCount}
+              isDesktop={isDesktop}
             />
           </div>
         </div>
@@ -483,6 +683,10 @@ function App() {
               onDeleteSong={handleDeleteSong}
               favoriteSongIds={favoriteSongIds}
               onToggleFavorite={toggleFavorite}
+              skipDeleteConfirmation={settings.skipDeleteConfirmation}
+              onSkipDeleteConfirmationChange={
+                handleSkipDeleteConfirmationChange
+              }
             />
           </div>
         )}
@@ -580,6 +784,21 @@ function App() {
     [handleGeneratorPlay, handleRegisterGeneratorStop],
   );
 
+  // Handle library import - wrapper to convert MusicFileInfo to the import format
+  const handleLibraryImport = useCallback(
+    async (
+      files: {
+        path: string;
+        name: string;
+        extension: string;
+        folder: string | null;
+      }[],
+    ) => {
+      await importFromMusicFileInfos(files);
+    },
+    [importFromMusicFileInfos],
+  );
+
   const settingsPage = useMemo(
     () => (
       <div className="flex-1 overflow-auto pt-16 pb-24 md:pb-20">
@@ -587,6 +806,7 @@ function App() {
           settings={settings}
           onUpdateSetting={updateSetting}
           onResetSettings={resetSettings}
+          onResetPlayer={handleResetPlayer}
           eqBands={eqBands}
           eqEnabled={eqEnabled}
           eqPreset={eqPreset}
@@ -595,6 +815,21 @@ function App() {
           onEqPresetChange={applyPreset}
           onEqReset={resetEqualizer}
           onEqToggleEnabled={toggleEqualizer}
+          // Library props
+          libraryFolders={library.folders}
+          libraryIsScanning={library.isScanning}
+          libraryScanProgress={library.scanProgress}
+          libraryLastScanResult={library.lastScanResult}
+          libraryError={library.error}
+          libraryIsDesktop={library.isDesktop}
+          libraryIsWatching={library.isWatching}
+          totalSongsInLibrary={songs.length}
+          onLibraryAddFolder={library.addFolder}
+          onLibraryRemoveFolder={library.removeFolder}
+          onLibraryScanFolder={library.scanFolder}
+          onLibraryScanAllFolders={library.scanAllFolders}
+          onLibraryImportFiles={handleLibraryImport}
+          onLibraryClearError={library.clearError}
         />
       </div>
     ),
@@ -610,6 +845,20 @@ function App() {
       applyPreset,
       resetEqualizer,
       toggleEqualizer,
+      library.folders,
+      library.isScanning,
+      library.scanProgress,
+      library.lastScanResult,
+      library.error,
+      library.isDesktop,
+      library.isWatching,
+      songs.length,
+      library.addFolder,
+      library.removeFolder,
+      library.scanFolder,
+      library.scanAllFolders,
+      handleLibraryImport,
+      library.clearError,
     ],
   );
 
@@ -622,12 +871,33 @@ function App() {
     [],
   );
 
+  // Show loading state while checking first launch
+  if (checkingFirstLaunch) {
+    return (
+      <div className="h-screen bg-vinyl-bg flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-vinyl-accent border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  // Show first launch wizard
+  if (showFirstLaunchWizard) {
+    return (
+      <FirstLaunchWizard
+        onAddFolder={library.addFolder}
+        onScanFolder={library.scanFolder}
+        onImportFiles={handleLibraryImport}
+        onComplete={handleWizardComplete}
+        onSkip={handleWizardSkip}
+      />
+    );
+  }
+
   return (
     <div className="h-screen bg-vinyl-bg flex overflow-hidden">
-      {/* Desktop sidebar - Fixed height, doesn't scroll with content */}
-      <div className="hidden md:flex md:flex-shrink-0">
+      {/* Desktop sidebar - Minimal icon-only sidebar */}
+      <div className="hidden md:block">
         <Sidebar
-          songCount={songs.length}
           canInstall={canInstall}
           onInstall={promptInstall}
           isUpdateAvailable={isUpdateAvailable}
@@ -642,7 +912,7 @@ function App() {
       </div>
 
       {/* Main content */}
-      <main className="flex-1 flex flex-col h-screen overflow-hidden relative">
+      <main className="flex-1 flex flex-col h-screen overflow-hidden relative md:ml-16">
         {/* Top navigation bar - now minimal */}
         <TopNav />
 
@@ -670,6 +940,10 @@ function App() {
                 updatePlaylist={updatePlaylist}
                 handleDeleteSong={handleDeleteSong}
                 toggleFavorite={toggleFavorite}
+                skipDeleteConfirmation={settings.skipDeleteConfirmation}
+                onSkipDeleteConfirmationChange={
+                  handleSkipDeleteConfirmationChange
+                }
               />
             }
           />
@@ -702,6 +976,27 @@ function App() {
         onEqPresetChange={applyPreset}
         onEqReset={resetEqualizer}
         onEqToggleEnabled={toggleEqualizer}
+        // Sleep timer props
+        sleepTimerActive={sleepTimer.isActive}
+        sleepTimerRemainingTime={sleepTimer.formatRemainingTime()}
+        sleepTimerProgress={sleepTimer.getProgress()}
+        onSleepTimerStart={sleepTimer.startTimer}
+        onSleepTimerStop={sleepTimer.stopTimer}
+        onSleepTimerAddTime={sleepTimer.addTime}
+        // Display mode
+        displayMode={settings.displayMode}
+        onDisplayModeChange={(mode) => updateSetting("displayMode", mode)}
+        // Visualizer props
+        visualizerEnabled={settings.visualizerEnabled}
+        visualizerStyle={settings.visualizerStyle}
+        frequencyData={frequencyData}
+        waveformData={waveformData}
+        onVisualizerToggle={() =>
+          updateSetting("visualizerEnabled", !settings.visualizerEnabled)
+        }
+        onVisualizerStyleChange={(style) =>
+          updateSetting("visualizerStyle", style)
+        }
         onTogglePlayPause={togglePlayPause}
         onNext={playNext}
         onPrevious={playPrevious}
@@ -713,6 +1008,7 @@ function App() {
         onPlayFromQueue={playFromQueue}
         onStop={stop}
         onDeleteFromQueue={removeSongFromQueue}
+        onReorderQueue={reorderQueue}
         onToggleFavorite={
           currentSong ? () => toggleFavorite(currentSong.id) : undefined
         }

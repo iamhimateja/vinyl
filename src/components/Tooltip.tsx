@@ -15,9 +15,13 @@ export function TooltipProvider() {
 }
 
 // Helper to add tooltip props to any element
-export function tooltipProps(content: string) {
+export function tooltipProps(
+  content: string,
+  place?: "top" | "bottom" | "left" | "right",
+) {
   return {
     "data-tooltip-id": "global-tooltip",
     "data-tooltip-content": content,
+    ...(place && { "data-tooltip-place": place }),
   };
 }

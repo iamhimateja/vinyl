@@ -7,6 +7,15 @@ import {
   updateSong as dbUpdateSong,
 } from "../lib/db";
 import { extractMetadata, isAudioFile, generateId } from "../lib/audioMetadata";
+import {
+  isDesktop,
+  fileExists,
+  scanMusicFolder,
+  openFolderPicker,
+  getStoredFolderPath,
+  saveStoredFolderPath,
+  readFileData,
+} from "../lib/platform";
 
 // Check if two songs are duplicates based on title, artist, and duration
 function isDuplicateSong(
@@ -50,13 +59,28 @@ export function clearCachedFile(songId: string): void {
   fileCache.delete(songId);
 }
 
-// Check if a song is available for playback (in memory cache)
+// Check if a song is available for playback
+// On desktop: always available if filePath exists (we'll verify on play)
+// On web: available if in memory cache
 export function isSongAvailable(song: Song): boolean {
+  if (isDesktop() && song.filePath) {
+    // On desktop, songs with file paths are considered available
+    // Actual file existence is verified when playing
+    return true;
+  }
   return fileCache.has(song.id);
 }
 
 // Check availability of multiple songs, returns Set of unavailable song IDs
 export function checkSongsAvailability(songs: Song[]): Set<string> {
+  // On desktop, all songs with filePaths are considered available
+  if (isDesktop()) {
+    return new Set(
+      songs
+        .filter((song) => !song.filePath && !fileCache.has(song.id))
+        .map((s) => s.id),
+    );
+  }
   return new Set(
     songs.filter((song) => !isSongAvailable(song)).map((s) => s.id),
   );
@@ -299,8 +323,303 @@ export function useSongs() {
     [],
   );
 
+  // Desktop: Import from a folder path (scans folder and imports all audio files)
+  // Returns imported count, skipped count, and folder-to-songIds map for playlist creation
+  const importFromFolderPath = useCallback(
+    async (
+      folderPath: string,
+    ): Promise<{
+      imported: number;
+      skipped: number;
+      folderSongs: Map<string, string[]>;
+    }> => {
+      if (!isDesktop()) {
+        return { imported: 0, skipped: 0, folderSongs: new Map() };
+      }
+
+      const files = await scanMusicFolder(folderPath);
+
+      if (files.length === 0) {
+        return { imported: 0, skipped: 0, folderSongs: new Map() };
+      }
+
+      setImportProgress({ current: 0, total: files.length, skipped: 0 });
+      let imported = 0;
+      let skipped = 0;
+
+      // Track songs per folder for playlist creation
+      // Use folder path basename as key for root folder songs
+      const folderSongs = new Map<string, string[]>();
+      const rootFolderName = folderPath.split(/[/\\]/).pop() || "Music";
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+
+        // Check if already exists by path
+        const existingByPath = songsRef.current.find(
+          (s) => s.filePath === file.path,
+        );
+        if (existingByPath) {
+          // Track folder for existing songs (use root folder name if no subfolder)
+          const folderKey = file.folder || rootFolderName;
+          const existing = folderSongs.get(folderKey) || [];
+          existing.push(existingByPath.id);
+          folderSongs.set(folderKey, existing);
+          skipped++;
+          setImportProgress({ current: i + 1, total: files.length, skipped });
+          continue;
+        }
+
+        try {
+          // Read the file to extract metadata
+          const data = await readFileData(file.path);
+          const blob = new Blob([new Uint8Array(data)]);
+          const fileObj = new File([blob], file.name, { type: "audio/mpeg" });
+
+          const metadata = await extractMetadata(fileObj);
+
+          // Check for duplicates by title/artist/duration
+          const duplicate = songsRef.current.find(
+            (s) =>
+              s.title?.toLowerCase() ===
+                (metadata.title || file.name)?.toLowerCase() &&
+              s.artist?.toLowerCase() ===
+                (metadata.artist || "Unknown Artist")?.toLowerCase() &&
+              Math.abs((s.duration || 0) - (metadata.duration || 0)) <= 2,
+          );
+
+          if (duplicate) {
+            // Update existing song with file path if it doesn't have one
+            if (!duplicate.filePath) {
+              const updatedSong = { ...duplicate, filePath: file.path };
+              await dbUpdateSong(updatedSong);
+              setSongs((prev) =>
+                prev.map((s) => (s.id === duplicate.id ? updatedSong : s)),
+              );
+            }
+            // Track folder for duplicate (use root folder name if no subfolder)
+            const folderKey = file.folder || rootFolderName;
+            const existing = folderSongs.get(folderKey) || [];
+            existing.push(duplicate.id);
+            folderSongs.set(folderKey, existing);
+            skipped++;
+            setImportProgress({ current: i + 1, total: files.length, skipped });
+            continue;
+          }
+
+          const song: Song = {
+            id: generateId(),
+            title: metadata.title || file.name.replace(/\.[^/.]+$/, ""),
+            artist: metadata.artist || "Unknown Artist",
+            album: metadata.album || "Unknown Album",
+            duration: metadata.duration || 0,
+            coverArt: metadata.coverArt,
+            sourceType: "local",
+            addedAt: Date.now(),
+            fileName: file.name,
+            fileSize: data.length,
+            filePath: file.path, // Store full path for desktop
+          };
+
+          await addSong(song);
+          setSongs((prev) => {
+            const newSongs = [song, ...prev];
+            songsRef.current = newSongs;
+            return newSongs;
+          });
+
+          // Track folder for new song (use root folder name if no subfolder)
+          const folderKey = file.folder || rootFolderName;
+          const existingInFolder = folderSongs.get(folderKey) || [];
+          existingInFolder.push(song.id);
+          folderSongs.set(folderKey, existingInFolder);
+
+          imported++;
+        } catch (error) {
+          console.error("Failed to import:", file.name, error);
+        }
+
+        setImportProgress({ current: i + 1, total: files.length, skipped });
+      }
+
+      // Save the folder path for future auto-loading
+      await saveStoredFolderPath(folderPath);
+      setImportProgress(null);
+
+      return { imported, skipped, folderSongs };
+    },
+    [],
+  );
+
+  // Desktop: Show folder picker and import
+  const pickAndImportFolder = useCallback(async (): Promise<{
+    imported: number;
+    skipped: number;
+    folderSongs: Map<string, string[]>;
+  } | null> => {
+    if (!isDesktop()) {
+      return null;
+    }
+
+    const folderPath = await openFolderPicker();
+    if (!folderPath) {
+      return null;
+    }
+
+    return importFromFolderPath(folderPath);
+  }, [importFromFolderPath]);
+
+  // Desktop: Auto-load from stored folder path on startup
+  const autoLoadStoredFolder = useCallback(async (): Promise<boolean> => {
+    if (!isDesktop()) {
+      return false;
+    }
+
+    const storedPath = await getStoredFolderPath();
+    if (!storedPath) {
+      return false;
+    }
+
+    // Verify folder still exists
+    const exists = await fileExists(storedPath);
+    if (!exists) {
+      return false;
+    }
+
+    // Scan and update any songs that need file path updates
+    const files = await scanMusicFolder(storedPath);
+    const currentSongs = songsRef.current;
+
+    for (const file of files) {
+      // Find songs that match by filename but don't have a filePath
+      const matchingSong = currentSongs.find(
+        (s) =>
+          s.fileName?.toLowerCase() === file.name.toLowerCase() && !s.filePath,
+      );
+
+      if (matchingSong) {
+        const updatedSong = { ...matchingSong, filePath: file.path };
+        await dbUpdateSong(updatedSong);
+        setSongs((prev) =>
+          prev.map((s) => (s.id === matchingSong.id ? updatedSong : s)),
+        );
+      }
+    }
+
+    return true;
+  }, []);
+
+  // Desktop: Import from an array of MusicFileInfo (returned by library scanner)
+  // This is more efficient than importFromFolderPath for batch imports from multiple folders
+  const importFromMusicFileInfos = useCallback(
+    async (
+      files: {
+        path: string;
+        name: string;
+        extension: string;
+        folder: string | null;
+      }[],
+    ): Promise<{
+      imported: number;
+      skipped: number;
+    }> => {
+      if (!isDesktop() || files.length === 0) {
+        return { imported: 0, skipped: 0 };
+      }
+
+      setImportProgress({ current: 0, total: files.length, skipped: 0 });
+      let imported = 0;
+      let skipped = 0;
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+
+        // Check if already exists by path
+        const existingByPath = songsRef.current.find(
+          (s) => s.filePath === file.path,
+        );
+        if (existingByPath) {
+          skipped++;
+          setImportProgress({ current: i + 1, total: files.length, skipped });
+          continue;
+        }
+
+        try {
+          // Read the file to extract metadata
+          const data = await readFileData(file.path);
+          const blob = new Blob([new Uint8Array(data)]);
+          const fileObj = new File([blob], file.name, { type: "audio/mpeg" });
+
+          const metadata = await extractMetadata(fileObj);
+
+          // Check for duplicates by title/artist/duration
+          const duplicate = songsRef.current.find(
+            (s) =>
+              s.title?.toLowerCase() ===
+                (metadata.title || file.name)?.toLowerCase() &&
+              s.artist?.toLowerCase() ===
+                (metadata.artist || "Unknown Artist")?.toLowerCase() &&
+              Math.abs((s.duration || 0) - (metadata.duration || 0)) <= 2,
+          );
+
+          if (duplicate) {
+            // Update existing song with file path if it doesn't have one
+            if (!duplicate.filePath) {
+              const updatedSong = { ...duplicate, filePath: file.path };
+              await dbUpdateSong(updatedSong);
+              setSongs((prev) =>
+                prev.map((s) => (s.id === duplicate.id ? updatedSong : s)),
+              );
+            }
+            skipped++;
+            setImportProgress({ current: i + 1, total: files.length, skipped });
+            continue;
+          }
+
+          const song: Song = {
+            id: generateId(),
+            title: metadata.title || file.name.replace(/\.[^/.]+$/, ""),
+            artist: metadata.artist || "Unknown Artist",
+            album: metadata.album || "Unknown Album",
+            duration: metadata.duration || 0,
+            coverArt: metadata.coverArt,
+            sourceType: "local",
+            addedAt: Date.now(),
+            fileName: file.name,
+            fileSize: data.length,
+            filePath: file.path,
+          };
+
+          await addSong(song);
+          setSongs((prev) => {
+            const newSongs = [song, ...prev];
+            songsRef.current = newSongs;
+            return newSongs;
+          });
+
+          imported++;
+        } catch (error) {
+          console.error("Failed to import:", file.name, error);
+        }
+
+        setImportProgress({ current: i + 1, total: files.length, skipped });
+      }
+
+      setImportProgress(null);
+      return { imported, skipped };
+    },
+    [],
+  );
+
   // Get count of connected (playable) songs
-  const connectedCount = songs.filter((s) => fileCache.has(s.id)).length;
+  // On desktop: songs with filePath are always connected
+  // On web: songs in memory cache are connected
+  const connectedCount = songs.filter((s) => {
+    if (isDesktop() && s.filePath) {
+      return true;
+    }
+    return fileCache.has(s.id);
+  }).length;
 
   return {
     songs,
@@ -314,5 +633,11 @@ export function useSongs() {
     connectedCount,
     totalCount: songs.length,
     refreshSongs: loadSongs,
+    // Desktop-specific exports
+    isDesktop: isDesktop(),
+    importFromFolderPath,
+    importFromMusicFileInfos,
+    pickAndImportFolder,
+    autoLoadStoredFolder,
   };
 }

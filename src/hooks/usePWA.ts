@@ -1,5 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
-import { useRegisterSW } from "virtual:pwa-register/react";
+
+// Check if running in a desktop environment - must be done at module level for tree shaking
+const isElectron =
+  typeof window !== "undefined" &&
+  (window as { electron?: { isElectron?: boolean } }).electron?.isElectron ===
+    true;
+const isTauri = typeof window !== "undefined" && "__TAURI__" in window;
+const isDesktopApp = isElectron || isTauri;
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -9,32 +16,57 @@ interface BeforeInstallPromptEvent extends Event {
 export function usePWA() {
   const [installPrompt, setInstallPrompt] =
     useState<BeforeInstallPromptEvent | null>(null);
-  const [isInstalled, setIsInstalled] = useState(false);
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [isReady, setIsReady] = useState(false);
+  const [isInstalled, setIsInstalled] = useState(isDesktopApp); // Consider desktop apps as "installed"
+  const [isOnline, setIsOnline] = useState(
+    typeof navigator !== "undefined" ? navigator.onLine : true,
+  );
+  const [needRefresh, setNeedRefresh] = useState(false);
+  const [offlineReady, setOfflineReady] = useState(false);
+  const [isReady, setIsReady] = useState(isDesktopApp); // Desktop apps are always ready
+  const [updateServiceWorker, setUpdateServiceWorker] = useState<
+    ((reloadPage?: boolean) => Promise<void>) | null
+  >(null);
 
-  // Use vite-plugin-pwa's hook for service worker registration
-  const {
-    needRefresh: [needRefresh, setNeedRefresh],
-    offlineReady: [offlineReady, setOfflineReady],
-    updateServiceWorker,
-  } = useRegisterSW({
-    onRegistered(registration) {
-      if (registration) {
-        setIsReady(true);
-        // Check for updates periodically (every hour)
-        setInterval(
-          () => {
-            registration.update();
+  // Register service worker only in web browser (not in desktop apps)
+  useEffect(() => {
+    // Skip PWA registration entirely in desktop apps
+    if (isDesktopApp) {
+      return;
+    }
+
+    // Dynamic import to avoid loading PWA code in Tauri
+    import("virtual:pwa-register")
+      .then(({ registerSW }) => {
+        const updateSW = registerSW({
+          immediate: true,
+          onNeedRefresh() {
+            setNeedRefresh(true);
           },
-          60 * 60 * 1000,
-        );
-      }
-    },
-    onRegisterError(error) {
-      console.error("[PWA] Service worker registration error:", error);
-    },
-  });
+          onOfflineReady() {
+            setOfflineReady(true);
+          },
+          onRegistered(registration) {
+            if (registration) {
+              setIsReady(true);
+              // Check for updates periodically (every hour)
+              setInterval(
+                () => {
+                  registration.update();
+                },
+                60 * 60 * 1000,
+              );
+            }
+          },
+          onRegisterError(error) {
+            console.error("[PWA] Service worker registration error:", error);
+          },
+        });
+        setUpdateServiceWorker(() => updateSW);
+      })
+      .catch((error) => {
+        console.warn("[PWA] Failed to load service worker module:", error);
+      });
+  }, []);
 
   // Track online/offline status
   useEffect(() => {
@@ -51,6 +83,9 @@ export function usePWA() {
   }, []);
 
   useEffect(() => {
+    // Skip in desktop apps
+    if (isDesktopApp) return;
+
     // Check if already installed
     const isStandalone =
       window.matchMedia("(display-mode: standalone)").matches ||
@@ -99,13 +134,15 @@ export function usePWA() {
   }, [installPrompt]);
 
   const updateApp = useCallback(() => {
-    updateServiceWorker(true);
+    if (updateServiceWorker) {
+      updateServiceWorker(true);
+    }
     setNeedRefresh(false);
-  }, [updateServiceWorker, setNeedRefresh]);
+  }, [updateServiceWorker]);
 
   const dismissOfflineReady = useCallback(() => {
     setOfflineReady(false);
-  }, [setOfflineReady]);
+  }, []);
 
   return {
     canInstall: !!installPrompt && !isInstalled,

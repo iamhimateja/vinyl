@@ -7,10 +7,13 @@ export interface Song {
   coverArt?: string;
   sourceType: "local";
   addedAt: number;
-  // Original filename for matching when reconnecting
+  // Original filename for matching when reconnecting (web)
   fileName?: string;
   // File size in bytes for matching
   fileSize?: number;
+  // Full file path for desktop apps (Tauri)
+  // When present, we can load the file directly without user interaction
+  filePath?: string;
 }
 
 export interface Playlist {
@@ -50,6 +53,7 @@ export type QueueBehavior = "replace" | "append" | "ask";
 export interface AppSettings {
   // Appearance
   theme: Theme;
+  accentColor: string; // Hex color like "#d4a574"
   showAlbumArt: boolean;
   appTitle: string;
   appIcon: "disc" | "music" | "headphones" | "vinyl";
@@ -70,4 +74,14 @@ export interface AppSettings {
   // Equalizer
   eqEnabled: boolean;
   eqPreset: string | null;
+
+  // Now Playing Display
+  displayMode: "vinyl" | "albumArt";
+
+  // Background Visualizer
+  visualizerEnabled: boolean;
+  visualizerStyle: "bars" | "wave" | "areaWave";
+
+  // Confirmations
+  skipDeleteConfirmation: boolean;
 }

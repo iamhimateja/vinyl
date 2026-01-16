@@ -12,10 +12,10 @@ import {
   Moon,
   Info,
 } from "lucide-react";
+import { tooltipProps } from "./Tooltip";
 import type { AppSettings, Theme } from "../types";
 
 interface SidebarProps {
-  songCount: number;
   canInstall?: boolean;
   onInstall?: () => void;
   isUpdateAvailable?: boolean;
@@ -41,7 +41,6 @@ const navItems = [
 ];
 
 export function Sidebar({
-  songCount,
   canInstall,
   onInstall,
   isUpdateAvailable,
@@ -54,62 +53,55 @@ export function Sidebar({
   const AppIcon = ICON_MAP[appIcon] || Disc3;
 
   return (
-    <aside className="w-64 h-screen bg-vinyl-surface border-r border-vinyl-border flex flex-col flex-shrink-0 sticky top-0">
+    <aside className="w-16 h-screen bg-vinyl-surface/95 backdrop-blur-sm border-r border-vinyl-border flex flex-col items-center flex-shrink-0 fixed left-0 top-0 z-[60] py-4">
       {/* Logo */}
-      <div className="p-6">
-        <NavLink to="/library" className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-vinyl-accent rounded-full flex items-center justify-center">
-            <AppIcon className="w-6 h-6 text-vinyl-bg" />
-          </div>
-          <div>
-            <h1 className="font-bold text-vinyl-text">{appTitle}</h1>
-            <p className="text-xs text-vinyl-text-muted">Music Player</p>
-          </div>
-        </NavLink>
-      </div>
+      <NavLink
+        to="/library"
+        className="mb-6"
+        {...tooltipProps(appTitle, "right")}
+      >
+        <div className="w-10 h-10 bg-vinyl-accent rounded-full flex items-center justify-center hover:scale-110 transition-transform">
+          <AppIcon className="w-6 h-6 text-vinyl-bg" />
+        </div>
+      </NavLink>
 
       {/* Navigation */}
-      <nav className="flex-1 px-3">
-        <ul className="space-y-1">
-          {navItems.map((item) => (
-            <li key={item.to}>
-              <NavLink
-                to={item.to}
-                className={({ isActive }) =>
-                  `w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
-                    isActive
-                      ? "bg-vinyl-accent/20 text-vinyl-accent"
-                      : "text-vinyl-text-muted hover:text-vinyl-text hover:bg-vinyl-border/50"
-                  }`
-                }
-              >
-                <item.icon className="w-5 h-5" />
-                <span>{item.label}</span>
-                {item.to === "/library" && songCount > 0 && (
-                  <span className="ml-auto text-xs bg-vinyl-border px-2 py-0.5 rounded-full">
-                    {songCount}
-                  </span>
-                )}
-              </NavLink>
-            </li>
-          ))}
-        </ul>
+      <nav className="flex-1 flex flex-col items-center gap-1">
+        {navItems.map((item) => (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            className={({ isActive }) =>
+              `w-10 h-10 flex items-center justify-center rounded-xl transition-all ${
+                isActive
+                  ? "bg-vinyl-accent/20 text-vinyl-accent"
+                  : "text-vinyl-text-muted hover:text-vinyl-text hover:bg-vinyl-border/50"
+              }`
+            }
+            {...tooltipProps(item.label, "right")}
+          >
+            <item.icon className="w-5 h-5" />
+          </NavLink>
+        ))}
       </nav>
 
       {/* Bottom section */}
-      <div className="p-3 border-t border-vinyl-border space-y-1">
+      <div className="flex flex-col items-center gap-1 pt-4 border-t border-vinyl-border">
         {/* Theme toggle */}
         {onToggleTheme && (
           <button
             onClick={onToggleTheme}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-vinyl-text-muted hover:text-vinyl-text hover:bg-vinyl-border/50"
+            className="w-10 h-10 flex items-center justify-center rounded-xl transition-colors text-vinyl-text-muted hover:text-vinyl-text hover:bg-vinyl-border/50"
+            {...tooltipProps(
+              theme === "dark" ? "Light Mode" : "Dark Mode",
+              "right",
+            )}
           >
             {theme === "dark" ? (
               <Sun className="w-5 h-5" />
             ) : (
               <Moon className="w-5 h-5" />
             )}
-            <span>{theme === "dark" ? "Light Mode" : "Dark Mode"}</span>
           </button>
         )}
 
@@ -117,25 +109,26 @@ export function Sidebar({
         <NavLink
           to="/about"
           className={({ isActive }) =>
-            `w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
+            `w-10 h-10 flex items-center justify-center rounded-xl transition-colors ${
               isActive
                 ? "bg-vinyl-accent/20 text-vinyl-accent"
                 : "text-vinyl-text-muted hover:text-vinyl-text hover:bg-vinyl-border/50"
             }`
           }
+          {...tooltipProps("About", "right")}
         >
           <Info className="w-5 h-5" />
-          <span>About</span>
         </NavLink>
 
         {/* Update available notification */}
         {isUpdateAvailable && onUpdate && (
           <button
             onClick={onUpdate}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors bg-vinyl-accent/20 text-vinyl-accent hover:bg-vinyl-accent/30"
+            className="w-10 h-10 flex items-center justify-center rounded-xl transition-colors bg-vinyl-accent/20 text-vinyl-accent hover:bg-vinyl-accent/30 relative"
+            {...tooltipProps("Update Available", "right")}
           >
             <RefreshCw className="w-5 h-5" />
-            <span>Update Available</span>
+            <span className="absolute top-1 right-1 w-2 h-2 bg-vinyl-accent rounded-full" />
           </button>
         )}
 
@@ -143,10 +136,10 @@ export function Sidebar({
         {canInstall && onInstall && (
           <button
             onClick={onInstall}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-vinyl-accent hover:bg-vinyl-accent/20"
+            className="w-10 h-10 flex items-center justify-center rounded-xl transition-colors text-vinyl-accent hover:bg-vinyl-accent/20"
+            {...tooltipProps("Install App", "right")}
           >
             <Download className="w-5 h-5" />
-            <span>Install App</span>
           </button>
         )}
       </div>

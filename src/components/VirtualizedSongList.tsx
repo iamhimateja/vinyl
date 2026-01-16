@@ -30,6 +30,10 @@ interface VirtualizedSongListProps {
   onDeleteSong?: (songId: string) => void;
   favoriteSongIds?: Set<string>;
   onToggleFavorite?: (songId: string) => void;
+  /** Skip delete confirmation dialog */
+  skipDeleteConfirmation?: boolean;
+  /** Callback when user chooses to skip confirmation */
+  onSkipDeleteConfirmationChange?: (skip: boolean) => void;
 }
 
 // Props for the memoized song row component
@@ -266,49 +270,16 @@ const SongRow = memo(function SongRow({
 
         {/* Add to playlist button */}
         {!compact && onAddToPlaylist && playlists.length > 0 && (
-          <div className="relative">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onTogglePlaylistMenu(showPlaylistMenu ? null : song.id);
-              }}
-              className="p-2 rounded-full hover:bg-vinyl-border transition-colors text-vinyl-text-muted hover:text-vinyl-accent"
-              {...tooltipProps("Add to playlist")}
-            >
-              <ListPlus className="w-4 h-4" />
-            </button>
-
-            {/* Playlist dropdown menu */}
-            {showPlaylistMenu && (
-              <>
-                <div
-                  className="fixed inset-0 z-10"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onTogglePlaylistMenu(null);
-                  }}
-                />
-                <div className="absolute right-0 top-8 z-20 bg-vinyl-surface border border-vinyl-border rounded-lg shadow-xl py-1 min-w-[160px] max-h-48 overflow-y-auto">
-                  <div className="px-3 py-1.5 text-xs text-vinyl-text-muted border-b border-vinyl-border">
-                    Add to playlist
-                  </div>
-                  {playlists.map((playlist) => (
-                    <button
-                      key={playlist.id}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onAddToPlaylist(song.id, playlist.id);
-                        onTogglePlaylistMenu(null);
-                      }}
-                      className="flex items-center gap-2 w-full px-3 py-2 text-left text-vinyl-text hover:bg-vinyl-border/50 transition-colors text-sm"
-                    >
-                      {playlist.name}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onTogglePlaylistMenu(showPlaylistMenu ? null : song.id);
+            }}
+            className="p-2 rounded-full hover:bg-vinyl-border transition-colors text-vinyl-text-muted hover:text-vinyl-accent"
+            {...tooltipProps("Add to playlist")}
+          >
+            <ListPlus className="w-4 h-4" />
+          </button>
         )}
 
         {/* Delete button */}
@@ -351,6 +322,8 @@ export function VirtualizedSongList({
   onDeleteSong,
   favoriteSongIds = new Set(),
   onToggleFavorite,
+  skipDeleteConfirmation = false,
+  onSkipDeleteConfirmationChange,
 }: VirtualizedSongListProps) {
   const parentRef = useRef<HTMLDivElement>(null);
   const [showPlaylistMenu, setShowPlaylistMenu] = useState<string | null>(null);
@@ -393,20 +366,45 @@ export function VirtualizedSongList({
     setShowPlaylistMenu(songId);
   }, []);
 
-  const handleShowDeleteDialog = useCallback((songId: string) => {
-    setDeleteDialogSongId(songId);
-  }, []);
-
-  const handleConfirmDelete = useCallback(() => {
-    if (deleteDialogSongId) {
-      if (onDeleteSong) {
-        onDeleteSong(deleteDialogSongId);
+  const handleShowDeleteDialog = useCallback(
+    (songId: string) => {
+      // If skip confirmation is enabled, delete immediately
+      if (skipDeleteConfirmation) {
+        if (onDeleteSong) {
+          onDeleteSong(songId);
+        } else {
+          onDelete(songId);
+        }
       } else {
-        onDelete(deleteDialogSongId);
+        setDeleteDialogSongId(songId);
       }
-      setDeleteDialogSongId(null);
-    }
-  }, [deleteDialogSongId, onDelete, onDeleteSong]);
+    },
+    [skipDeleteConfirmation, onDeleteSong, onDelete],
+  );
+
+  const handleConfirmDelete = useCallback(
+    (dontAskAgain?: boolean) => {
+      if (deleteDialogSongId) {
+        // If user checked "don't ask again", save the preference
+        if (dontAskAgain && onSkipDeleteConfirmationChange) {
+          onSkipDeleteConfirmationChange(true);
+        }
+
+        if (onDeleteSong) {
+          onDeleteSong(deleteDialogSongId);
+        } else {
+          onDelete(deleteDialogSongId);
+        }
+        setDeleteDialogSongId(null);
+      }
+    },
+    [
+      deleteDialogSongId,
+      onDelete,
+      onDeleteSong,
+      onSkipDeleteConfirmationChange,
+    ],
+  );
 
   if (songs.length === 0) {
     return (
@@ -469,6 +467,56 @@ export function VirtualizedSongList({
         </div>
       </div>
 
+      {/* Add to Playlist modal - rendered outside the scroll container */}
+      {showPlaylistMenu && onAddToPlaylist && (
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-black/20"
+            onClick={() => setShowPlaylistMenu(null)}
+          />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+            <div className="bg-vinyl-surface border border-vinyl-border rounded-xl shadow-2xl py-2 w-64 max-h-80 overflow-y-auto pointer-events-auto">
+              <div className="px-4 py-2 text-sm font-medium text-vinyl-text border-b border-vinyl-border">
+                Add to playlist
+              </div>
+              {playlists.filter((p) => p.name !== "Favorites").length === 0 ? (
+                <div className="px-4 py-3 text-sm text-vinyl-text-muted">
+                  No playlists yet. Create one first!
+                </div>
+              ) : (
+                playlists
+                  .filter((p) => p.name !== "Favorites")
+                  .map((playlist) => {
+                    const isAlreadyInPlaylist =
+                      playlist.songIds.includes(showPlaylistMenu);
+                    return (
+                      <button
+                        key={playlist.id}
+                        onClick={() => {
+                          onAddToPlaylist(playlist.id, showPlaylistMenu);
+                          setShowPlaylistMenu(null);
+                        }}
+                        className={`flex items-center justify-between w-full px-4 py-2.5 text-left transition-colors text-sm ${
+                          isAlreadyInPlaylist
+                            ? "text-vinyl-accent bg-vinyl-accent/10"
+                            : "text-vinyl-text hover:bg-vinyl-border/50"
+                        }`}
+                      >
+                        <span>{playlist.name}</span>
+                        {isAlreadyInPlaylist && (
+                          <span className="text-xs text-vinyl-accent">
+                            ✓ Added
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Delete confirmation dialog */}
       <ConfirmDialog
         isOpen={!!deleteDialogSongId}
@@ -477,6 +525,7 @@ export function VirtualizedSongList({
         confirmLabel="Delete"
         cancelLabel="Cancel"
         variant="danger"
+        showDontAskAgain={!!onSkipDeleteConfirmationChange}
         onConfirm={handleConfirmDelete}
         onCancel={() => setDeleteDialogSongId(null)}
       />

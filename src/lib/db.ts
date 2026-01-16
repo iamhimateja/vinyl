@@ -163,3 +163,40 @@ export async function checkStorageQuota(): Promise<{
   }
   return { used: 0, quota: 0, percent: 0 };
 }
+
+// Clear all data from the database (for reset)
+export async function clearAllData(): Promise<void> {
+  const db = await getDB();
+
+  // Clear all object stores
+  const tx = db.transaction(["songs", "playlists", "playerState"], "readwrite");
+
+  await Promise.all([
+    tx.objectStore("songs").clear(),
+    tx.objectStore("playlists").clear(),
+    tx.objectStore("playerState").clear(),
+  ]);
+
+  await tx.done;
+}
+
+// Delete the entire database (nuclear option)
+export async function deleteDatabase(): Promise<void> {
+  // Close existing connection
+  if (dbPromise) {
+    const db = await dbPromise;
+    db.close();
+    dbPromise = null;
+  }
+
+  // Delete the database
+  await new Promise<void>((resolve, reject) => {
+    const request = indexedDB.deleteDatabase(DB_NAME);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+    request.onblocked = () => {
+      console.warn("Database deletion blocked - closing connections");
+      resolve();
+    };
+  });
+}
