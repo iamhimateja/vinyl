@@ -85,6 +85,7 @@ function createWindow() {
     minHeight: 600,
     show: true, // Ensure window is shown
     icon: path.join(__dirname, "../public/icons/icon.svg"),
+    autoHideMenuBar: true, // Hide the menu bar
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
@@ -129,7 +130,6 @@ function createWindow() {
   if (isDev) {
     console.log("[Electron] Loading from dev server...");
     mainWindow.loadURL("http://localhost:5173");
-    mainWindow.webContents.openDevTools();
   } else {
     const indexPath = path.join(__dirname, "../dist/index.html");
     console.log("[Electron] Loading from file:", indexPath);
