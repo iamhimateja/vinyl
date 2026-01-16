@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Discussions
+    url: https://github.com/iamhimateja/vinyl-music-player/discussions
+    about: Ask questions, share ideas, or connect with the community
+  - name: 📖 Documentation
+    url: https://github.com/iamhimateja/vinyl-music-player#readme
+    about: Read the documentation before opening an issue
