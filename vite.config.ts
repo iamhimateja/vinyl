@@ -3,13 +3,17 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
 
-// Check if we're building for Tauri
+// Check if we're building for a desktop environment (Tauri or Electron)
 const isTauri = process.env.TAURI_ENV_PLATFORM !== undefined;
+const isElectron = process.env.ELECTRON === "true";
+const isDesktopBuild = isTauri || isElectron;
 
 export default defineConfig({
+  // Use relative paths for Electron builds
+  base: isElectron ? "./" : "/",
   // Prevent vite from obscuring rust errors
   clearScreen: false,
-  // Tauri expects a fixed port, fail if that port is not available
+  // Tauri/Electron expects a fixed port, fail if that port is not available
   server: {
     port: 5173,
     strictPort: true,
@@ -25,8 +29,8 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
-      // Disable PWA in Tauri builds
-      disable: isTauri,
+      // Disable PWA in desktop builds (Tauri/Electron)
+      disable: isDesktopBuild,
       registerType: "autoUpdate",
       injectRegister: "auto",
       strategies: "generateSW",

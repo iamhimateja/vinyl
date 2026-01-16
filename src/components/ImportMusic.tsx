@@ -12,7 +12,7 @@ import {
   Info,
   Lightbulb,
 } from "lucide-react";
-import { isTauri } from "../lib/platform";
+import { isDesktop as checkIsDesktop } from "../lib/platform";
 
 interface ImportMusicProps {
   onImport: (
@@ -57,7 +57,7 @@ export function ImportMusic({
   totalCount = 0,
   isDesktop = false,
 }: ImportMusicProps) {
-  const isRunningInTauri = isDesktop || isTauri();
+  const isRunningInDesktop = isDesktop || checkIsDesktop();
   const [isOpen, setIsOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
@@ -79,7 +79,7 @@ export function ImportMusic({
   // On desktop, songs with file paths don't need reconnection
   useEffect(() => {
     if (
-      !isRunningInTauri &&
+      !isRunningInDesktop &&
       hasDisconnectedSongs &&
       !reconnectDismissed &&
       !showReconnectDialog &&
@@ -92,7 +92,7 @@ export function ImportMusic({
       return () => clearTimeout(timer);
     }
   }, [
-    isRunningInTauri,
+    isRunningInDesktop,
     hasDisconnectedSongs,
     reconnectDismissed,
     showReconnectDialog,
@@ -527,20 +527,18 @@ export function ImportMusic({
 
             {/* Import buttons */}
             <div className="grid grid-cols-2 gap-3 mt-4">
-              {!isRunningInTauri && (
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex items-center justify-center gap-2 p-3 bg-vinyl-border/50 hover:bg-vinyl-border rounded-lg transition-colors"
-                >
-                  <FileAudio className="w-5 h-5 text-vinyl-accent" />
-                  <span className="text-vinyl-text text-sm">Select Files</span>
-                </button>
-              )}
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="flex items-center justify-center gap-2 p-3 bg-vinyl-border/50 hover:bg-vinyl-border rounded-lg transition-colors"
+              >
+                <FileAudio className="w-5 h-5 text-vinyl-accent" />
+                <span className="text-vinyl-text text-sm">Select Files</span>
+              </button>
 
               <button
                 onClick={async () => {
-                  if (isRunningInTauri && onPickAndImportFolder) {
-                    // Use native Tauri folder picker
+                  if (isRunningInDesktop && onPickAndImportFolder) {
+                    // Use native folder picker
                     const result = await onPickAndImportFolder();
                     if (result) {
                       // Create playlists from folder structure
@@ -572,9 +570,7 @@ export function ImportMusic({
                     folderInputRef.current?.click();
                   }
                 }}
-                className={`flex items-center justify-center gap-2 p-3 bg-vinyl-border/50 hover:bg-vinyl-border rounded-lg transition-colors ${
-                  isRunningInTauri ? "col-span-2" : ""
-                }`}
+                className="flex items-center justify-center gap-2 p-3 bg-vinyl-border/50 hover:bg-vinyl-border rounded-lg transition-colors"
               >
                 <FolderOpen className="w-5 h-5 text-vinyl-accent" />
                 <span className="text-vinyl-text text-sm">Select Folder</span>

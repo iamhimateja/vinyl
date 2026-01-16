@@ -1,7 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
 
-// Check if running in Tauri - must be done at module level for tree shaking
+// Check if running in a desktop environment - must be done at module level for tree shaking
+const isElectron =
+  typeof window !== "undefined" &&
+  (window as { electron?: { isElectron?: boolean } }).electron?.isElectron ===
+    true;
 const isTauri = typeof window !== "undefined" && "__TAURI__" in window;
+const isDesktopApp = isElectron || isTauri;
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -11,21 +16,21 @@ interface BeforeInstallPromptEvent extends Event {
 export function usePWA() {
   const [installPrompt, setInstallPrompt] =
     useState<BeforeInstallPromptEvent | null>(null);
-  const [isInstalled, setIsInstalled] = useState(isTauri); // Consider Tauri as "installed"
+  const [isInstalled, setIsInstalled] = useState(isDesktopApp); // Consider desktop apps as "installed"
   const [isOnline, setIsOnline] = useState(
     typeof navigator !== "undefined" ? navigator.onLine : true,
   );
   const [needRefresh, setNeedRefresh] = useState(false);
   const [offlineReady, setOfflineReady] = useState(false);
-  const [isReady, setIsReady] = useState(isTauri); // Tauri is always ready
+  const [isReady, setIsReady] = useState(isDesktopApp); // Desktop apps are always ready
   const [updateServiceWorker, setUpdateServiceWorker] = useState<
     ((reloadPage?: boolean) => Promise<void>) | null
   >(null);
 
-  // Register service worker only in web browser (not in Tauri)
+  // Register service worker only in web browser (not in desktop apps)
   useEffect(() => {
-    // Skip PWA registration entirely in Tauri
-    if (isTauri) {
+    // Skip PWA registration entirely in desktop apps
+    if (isDesktopApp) {
       return;
     }
 
@@ -78,8 +83,8 @@ export function usePWA() {
   }, []);
 
   useEffect(() => {
-    // Skip in Tauri
-    if (isTauri) return;
+    // Skip in desktop apps
+    if (isDesktopApp) return;
 
     // Check if already installed
     const isStandalone =

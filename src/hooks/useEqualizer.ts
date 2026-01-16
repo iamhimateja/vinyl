@@ -1,4 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import {
+  getSharedAudioContext,
+  resumeAudioContext,
+  type SharedAudioData,
+} from "../lib/audioContext";
 
 export interface EqualizerBand {
   frequency: number;
@@ -49,14 +54,13 @@ interface StoredSettings {
 
 export function useEqualizer(audioElement: HTMLAudioElement | null) {
   const [bands, setBands] = useState<EqualizerBand[]>(DEFAULT_BANDS);
-  const [enabled, setEnabled] = useState(false); // Start disabled - audio plays normally
+  const [enabled, setEnabled] = useState(false);
   const [currentPreset, setCurrentPreset] = useState<string | null>("Flat");
   const [isConnected, setIsConnected] = useState(false);
 
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const sharedDataRef = useRef<SharedAudioData | null>(null);
   const filtersRef = useRef<BiquadFilterNode[]>([]);
-  const gainNodeRef = useRef<GainNode | null>(null);
+  const filtersConnectedRef = useRef(false);
 
   // Load saved settings from localStorage
   useEffect(() => {
@@ -87,96 +91,76 @@ export function useEqualizer(audioElement: HTMLAudioElement | null) {
     }
   }, [bands, enabled, currentPreset]);
 
-  // Initialize Web Audio API
-  const initializeAudioContext = useCallback(() => {
-    if (!audioElement || isConnected) return;
+  // Initialize using shared audio context
+  const initializeEqualizer = useCallback(() => {
+    if (!audioElement || filtersConnectedRef.current) return;
 
-    try {
-      console.log("[Equalizer] Initializing Web Audio API...");
+    const sharedData = getSharedAudioContext(audioElement);
+    if (!sharedData) return;
 
-      // Create AudioContext
-      const AudioContextClass =
-        window.AudioContext ||
-        (window as unknown as { webkitAudioContext: typeof AudioContext })
-          .webkitAudioContext;
-      audioContextRef.current = new AudioContextClass();
-      const audioContext = audioContextRef.current;
+    sharedDataRef.current = sharedData;
+    const { audioContext, preGainNode, postGainNode } = sharedData;
 
-      console.log("[Equalizer] AudioContext state:", audioContext.state);
+    console.log("[Equalizer] Creating filters...");
 
-      // Create source from audio element
-      sourceNodeRef.current =
-        audioContext.createMediaElementSource(audioElement);
+    // Create biquad filters for each frequency band
+    filtersRef.current = bands.map((band) => {
+      const filter = audioContext.createBiquadFilter();
+      filter.type = "peaking";
+      filter.frequency.value = band.frequency;
+      filter.Q.value = 1.4;
+      filter.gain.value = enabled ? band.gain : 0;
+      return filter;
+    });
 
-      // Create gain node for master volume
-      gainNodeRef.current = audioContext.createGain();
-      gainNodeRef.current.gain.value = 1;
+    // Disconnect default connection and insert filters
+    // Chain: source -> analyser -> preGain -> [FILTERS] -> postGain -> destination
+    preGainNode.disconnect();
 
-      // Create biquad filters for each frequency band
-      filtersRef.current = bands.map((band) => {
-        const filter = audioContext.createBiquadFilter();
-        filter.type = "peaking";
-        filter.frequency.value = band.frequency;
-        filter.Q.value = 1.4; // Quality factor for smooth response
-        filter.gain.value = enabled ? band.gain : 0;
-        return filter;
-      });
+    let previousNode: AudioNode = preGainNode;
+    filtersRef.current.forEach((filter) => {
+      previousNode.connect(filter);
+      previousNode = filter;
+    });
+    previousNode.connect(postGainNode);
 
-      // Connect nodes: source -> filters -> gain -> destination
-      let previousNode: AudioNode = sourceNodeRef.current;
-      filtersRef.current.forEach((filter) => {
-        previousNode.connect(filter);
-        previousNode = filter;
-      });
-      previousNode.connect(gainNodeRef.current);
-      gainNodeRef.current.connect(audioContext.destination);
+    filtersConnectedRef.current = true;
+    setIsConnected(true);
+    console.log("[Equalizer] Filters connected");
+  }, [audioElement, bands, enabled]);
 
-      // Resume if suspended
-      if (audioContext.state === "suspended") {
-        audioContext.resume().then(() => {
-          console.log("[Equalizer] AudioContext resumed");
-        });
-      }
-
-      setIsConnected(true);
-      console.log("[Equalizer] Initialized successfully");
-    } catch (error) {
-      console.error("[Equalizer] Failed to initialize:", error);
-    }
-  }, [audioElement, bands, enabled, isConnected]);
-
-  // Only connect to audio element when equalizer is enabled
-  // This allows normal audio playback without Web Audio API overhead
+  // Connect when enabled
   useEffect(() => {
     if (audioElement && enabled && !isConnected) {
-      // Initialize immediately when enabled - user has already interacted
-      initializeAudioContext();
+      initializeEqualizer();
     }
-  }, [audioElement, enabled, isConnected, initializeAudioContext]);
+  }, [audioElement, enabled, isConnected, initializeEqualizer]);
 
-  // Resume AudioContext if suspended (needed after user interaction)
+  // Resume AudioContext on user interaction
   useEffect(() => {
-    if (isConnected && audioContextRef.current?.state === "suspended") {
-      audioContextRef.current.resume().catch((err) => {
-        console.error("Failed to resume AudioContext:", err);
-      });
-    }
-  }, [isConnected, bands, enabled]);
+    if (!audioElement) return;
+    const resume = () => resumeAudioContext(audioElement);
+    window.addEventListener("click", resume, { once: true });
+    window.addEventListener("touchstart", resume, { once: true });
+    return () => {
+      window.removeEventListener("click", resume);
+      window.removeEventListener("touchstart", resume);
+    };
+  }, [audioElement]);
 
   // Update filter gains when bands change
   useEffect(() => {
-    if (!isConnected || !filtersRef.current.length) return;
+    if (!filtersRef.current.length) return;
 
     filtersRef.current.forEach((filter, index) => {
       const targetGain = enabled ? bands[index].gain : 0;
-      // Use setValueAtTime for smooth transitions
       filter.gain.setTargetAtTime(
         targetGain,
-        audioContextRef.current?.currentTime || 0,
+        sharedDataRef.current?.audioContext.currentTime || 0,
         0.01,
       );
     });
-  }, [bands, enabled, isConnected]);
+  }, [bands, enabled]);
 
   // Set band gain
   const setBandGain = useCallback((index: number, gain: number) => {
@@ -188,7 +172,7 @@ export function useEqualizer(audioElement: HTMLAudioElement | null) {
       };
       return newBands;
     });
-    setCurrentPreset(null); // Clear preset when manually adjusting
+    setCurrentPreset(null);
   }, []);
 
   // Apply preset
@@ -204,24 +188,12 @@ export function useEqualizer(audioElement: HTMLAudioElement | null) {
 
   // Reset to flat
   const reset = useCallback(() => {
-    applyPreset(EQUALIZER_PRESETS[0]); // Flat preset
+    applyPreset(EQUALIZER_PRESETS[0]);
   }, [applyPreset]);
 
   // Toggle enabled state
   const toggleEnabled = useCallback(() => {
     setEnabled((prev) => !prev);
-  }, []);
-
-  // Cleanup
-  useEffect(() => {
-    return () => {
-      if (
-        audioContextRef.current &&
-        audioContextRef.current.state !== "closed"
-      ) {
-        audioContextRef.current.close();
-      }
-    };
   }, []);
 
   return {

@@ -16,13 +16,18 @@ window.onunhandledrejection = (event) => {
   console.error("Unhandled rejection:", event.reason);
 };
 
-// Use HashRouter for Tauri (file:// protocol doesn't support BrowserRouter well)
+// Check if running in a desktop environment
+const isElectron = (window as { electron?: { isElectron?: boolean } }).electron
+  ?.isElectron;
 const isTauri = "__TAURI__" in window;
-const Router = isTauri ? HashRouter : BrowserRouter;
+const isDesktopApp = isElectron || isTauri;
+
+// Use HashRouter for desktop apps (file:// protocol doesn't support BrowserRouter well)
+const Router = isDesktopApp ? HashRouter : BrowserRouter;
 
 const root = document.getElementById("root");
 if (root) {
-  // Disable StrictMode in Tauri to avoid double-effect issues
+  // Disable StrictMode in desktop apps to avoid double-effect issues
   const content = (
     <ErrorBoundary>
       <Router>
@@ -33,6 +38,6 @@ if (root) {
   );
 
   createRoot(root).render(
-    isTauri ? content : <StrictMode>{content}</StrictMode>,
+    isDesktopApp ? content : <StrictMode>{content}</StrictMode>,
   );
 }
