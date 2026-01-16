@@ -103,7 +103,7 @@ export function BottomPlayer({
   return (
     <div
       ref={containerRef}
-      className={`fixed left-0 right-0 bottom-16 md:bottom-0 md:left-64 bg-vinyl-surface transition-all duration-300 z-40 ${
+      className={`fixed left-0 right-0 bottom-16 md:bottom-0 md:left-16 bg-vinyl-surface transition-all duration-300 z-40 ${
         isExpanded ? "h-80" : "h-16"
       }`}
     >

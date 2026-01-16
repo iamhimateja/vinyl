@@ -14,12 +14,15 @@ import {
   Type,
   Trash2,
   AlertTriangle,
+  Activity,
 } from "lucide-react";
 import type { AppSettings, RepeatMode, QueueBehavior } from "../types";
 import type { EqualizerBand, EqualizerPreset } from "../hooks/useEqualizer";
 import { EQUALIZER_PRESETS } from "../hooks/useEqualizer";
 import { tooltipProps } from "./Tooltip";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { LibrarySettings } from "./LibrarySettings";
+import type { MusicFileInfo, LibraryScanResult } from "../lib/platform";
 
 interface SettingsViewProps {
   settings: AppSettings;
@@ -39,6 +42,25 @@ interface SettingsViewProps {
   onEqPresetChange: (preset: EqualizerPreset) => void;
   onEqReset: () => void;
   onEqToggleEnabled: () => void;
+  // Library props
+  libraryFolders: string[];
+  libraryIsScanning: boolean;
+  libraryScanProgress: {
+    current: number;
+    total: number;
+    currentFolder: string;
+  } | null;
+  libraryLastScanResult: LibraryScanResult | null;
+  libraryError: string | null;
+  libraryIsDesktop: boolean;
+  libraryIsWatching: boolean;
+  totalSongsInLibrary: number;
+  onLibraryAddFolder: () => Promise<string | null>;
+  onLibraryRemoveFolder: (folderPath: string) => Promise<boolean>;
+  onLibraryScanFolder: (folderPath: string) => Promise<MusicFileInfo[]>;
+  onLibraryScanAllFolders: () => Promise<MusicFileInfo[]>;
+  onLibraryImportFiles: (files: MusicFileInfo[]) => Promise<void>;
+  onLibraryClearError: () => void;
 }
 
 const APP_ICONS = [
@@ -61,6 +83,21 @@ export function SettingsView({
   onEqPresetChange,
   onEqReset,
   onEqToggleEnabled,
+  // Library props
+  libraryFolders,
+  libraryIsScanning,
+  libraryScanProgress,
+  libraryLastScanResult,
+  libraryError,
+  libraryIsDesktop,
+  libraryIsWatching,
+  totalSongsInLibrary,
+  onLibraryAddFolder,
+  onLibraryRemoveFolder,
+  onLibraryScanFolder,
+  onLibraryScanAllFolders,
+  onLibraryImportFiles,
+  onLibraryClearError,
 }: SettingsViewProps) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [tempTitle, setTempTitle] = useState(settings.appTitle);
@@ -87,6 +124,24 @@ export function SettingsView({
           Reset All
         </button>
       </div>
+
+      {/* Music Library Section */}
+      <LibrarySettings
+        folders={libraryFolders}
+        isScanning={libraryIsScanning}
+        scanProgress={libraryScanProgress}
+        lastScanResult={libraryLastScanResult}
+        error={libraryError}
+        isDesktop={libraryIsDesktop}
+        isWatching={libraryIsWatching}
+        totalSongsInLibrary={totalSongsInLibrary}
+        onAddFolder={onLibraryAddFolder}
+        onRemoveFolder={onLibraryRemoveFolder}
+        onScanFolder={onLibraryScanFolder}
+        onScanAllFolders={onLibraryScanAllFolders}
+        onImportFiles={onLibraryImportFiles}
+        onClearError={onLibraryClearError}
+      />
 
       {/* Appearance Section */}
       <section className="bg-vinyl-surface border border-vinyl-border rounded-lg overflow-hidden">
@@ -128,6 +183,40 @@ export function SettingsView({
                 <Moon className="w-4 h-4" />
                 Dark
               </button>
+            </div>
+          </div>
+
+          {/* Accent Color */}
+          <div className="space-y-3">
+            <div>
+              <h3 className="text-vinyl-text font-medium">Accent Color</h3>
+              <p className="text-sm text-vinyl-text-muted">
+                Choose your preferred accent color
+              </p>
+            </div>
+            <div className="flex items-center gap-3 flex-wrap">
+              {[
+                { color: "#d4a574", name: "Gold" },
+                { color: "#8B5CF6", name: "Purple" },
+                { color: "#06B6D4", name: "Cyan" },
+                { color: "#10B981", name: "Emerald" },
+                { color: "#F43F5E", name: "Rose" },
+                { color: "#F97316", name: "Orange" },
+                { color: "#3B82F6", name: "Blue" },
+                { color: "#EC4899", name: "Pink" },
+              ].map(({ color, name }) => (
+                <button
+                  key={color}
+                  onClick={() => onUpdateSetting("accentColor", color)}
+                  className={`w-8 h-8 rounded-full transition-all ${
+                    settings.accentColor === color
+                      ? "ring-2 ring-white ring-offset-2 ring-offset-vinyl-surface scale-110"
+                      : "hover:scale-110"
+                  }`}
+                  style={{ backgroundColor: color }}
+                  title={name}
+                />
+              ))}
             </div>
           </div>
 
@@ -526,6 +615,95 @@ export function SettingsView({
                 <span>0dB</span>
                 <span>+12dB</span>
               </div>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Now Playing Display Section */}
+      <section className="bg-vinyl-surface border border-vinyl-border rounded-lg overflow-hidden">
+        <div className="px-4 py-3 border-b border-vinyl-border bg-vinyl-border/20">
+          <h2 className="font-semibold text-vinyl-text flex items-center gap-2">
+            <Activity className="w-5 h-5 text-vinyl-accent" />
+            Now Playing Display
+          </h2>
+        </div>
+        <div className="p-4 space-y-4">
+          {/* Display Mode */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-vinyl-text font-medium">Display Mode</h3>
+              <p className="text-sm text-vinyl-text-muted">
+                Main visual in Now Playing
+              </p>
+            </div>
+            <div className="flex bg-vinyl-border rounded-lg p-1">
+              <button
+                onClick={() => onUpdateSetting("displayMode", "vinyl")}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm transition-colors ${
+                  settings.displayMode === "vinyl"
+                    ? "bg-vinyl-accent text-vinyl-bg"
+                    : "text-vinyl-text-muted hover:text-vinyl-text"
+                }`}
+              >
+                <Disc3 className="w-4 h-4" />
+                Vinyl
+              </button>
+              <button
+                onClick={() => onUpdateSetting("displayMode", "albumArt")}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm transition-colors ${
+                  settings.displayMode === "albumArt"
+                    ? "bg-vinyl-accent text-vinyl-bg"
+                    : "text-vinyl-text-muted hover:text-vinyl-text"
+                }`}
+              >
+                <Music className="w-4 h-4" />
+                Album Art
+              </button>
+            </div>
+          </div>
+
+          {/* Enable Visualizer */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-vinyl-text font-medium">
+                Background Visualizer
+              </h3>
+              <p className="text-sm text-vinyl-text-muted">
+                Animated audio visualization behind display
+              </p>
+            </div>
+            <ToggleSwitch
+              enabled={settings.visualizerEnabled}
+              onChange={(v) => onUpdateSetting("visualizerEnabled", v)}
+            />
+          </div>
+
+          {/* Visualizer Style - only show when enabled */}
+          {settings.visualizerEnabled && (
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-vinyl-text font-medium">
+                  Visualizer Style
+                </h3>
+                <p className="text-sm text-vinyl-text-muted">
+                  Choose visualizer animation
+                </p>
+              </div>
+              <select
+                value={settings.visualizerStyle}
+                onChange={(e) =>
+                  onUpdateSetting(
+                    "visualizerStyle",
+                    e.target.value as typeof settings.visualizerStyle,
+                  )
+                }
+                className="px-3 py-1.5 bg-vinyl-border text-vinyl-text rounded text-sm border-0 cursor-pointer"
+              >
+                <option value="bars">Bars</option>
+                <option value="wave">Wave</option>
+                <option value="areaWave">Area Wave</option>
+              </select>
             </div>
           )}
         </div>

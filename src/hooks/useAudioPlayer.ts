@@ -8,7 +8,7 @@ import type {
 } from "../types";
 import { savePlayerState, getPlayerState } from "../lib/db";
 import { getCachedFile } from "./useSongs";
-import { isTauri, getAssetUrl, fileExists } from "../lib/platform";
+import { isDesktop, getAssetUrl, fileExists } from "../lib/platform";
 
 const defaultPlayerState: PlayerState = {
   currentSongId: null,
@@ -25,15 +25,21 @@ const defaultPlayerState: PlayerState = {
 
 export function useAudioPlayer(songs: Song[], settings?: AppSettings) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const nextAudioRef = useRef<HTMLAudioElement | null>(null); // For crossfade
   const [playerState, setPlayerState] =
     useState<PlayerState>(defaultPlayerState);
   const [playbackState, setPlaybackState] = useState<PlaybackState>("idle");
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const objectUrlRef = useRef<string | null>(null);
+  const nextObjectUrlRef = useRef<string | null>(null); // For crossfade
   const hasRestoredSong = useRef(false);
   const savedPositionRef = useRef<number>(0);
   const isLoadingRef = useRef(false); // Prevent concurrent loads
+  const crossfadeInProgressRef = useRef(false); // Track if crossfade is happening
+  const crossfadeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
+    null,
+  );
 
   // Use refs for values needed in event handlers to avoid stale closures
   const playerStateRef = useRef(playerState);
@@ -67,12 +73,22 @@ export function useAudioPlayer(songs: Song[], settings?: AppSettings) {
     // Stop and reset current audio before loading new source
     audio.pause();
     audio.currentTime = 0;
-    audio.src = "";
 
     // Revoke previous blob URL to free memory
     if (objectUrlRef.current) {
       URL.revokeObjectURL(objectUrlRef.current);
       objectUrlRef.current = null;
+    }
+
+    // Clear source only if it was previously set (avoid triggering error)
+    if (
+      audio.src &&
+      audio.src !== "" &&
+      !audio.src.startsWith(window.location.origin)
+    ) {
+      audio.src = "";
+      audio.removeAttribute("src");
+      audio.load();
     }
 
     setPlayerState((prev) => ({
@@ -89,7 +105,7 @@ export function useAudioPlayer(songs: Song[], settings?: AppSettings) {
       let audioUrl: string | null = null;
 
       // On desktop with file path, read file and create blob URL
-      if (isTauri() && song.filePath) {
+      if (isDesktop() && song.filePath) {
         const exists = await fileExists(song.filePath);
         if (exists) {
           audioUrl = await getAssetUrl(song.filePath);
@@ -207,39 +223,393 @@ export function useAudioPlayer(songs: Song[], settings?: AppSettings) {
     }
   }, []);
 
-  // Handle song end - using refs to always have current values
-  const handleSongEnd = useCallback(() => {
-    const state = playerStateRef.current;
-    const autoPlay = settingsRef.current?.autoPlay !== false; // Default to true
-
-    setPlaybackState("ended");
-
-    // Repeat one: loop current song
-    if (state.repeat === "one") {
-      if (audioRef.current) {
-        audioRef.current.currentTime = 0;
-        audioRef.current.play();
-        setPlaybackState("playing");
+  // Helper to get audio URL for a song
+  const getAudioUrl = useCallback(
+    async (song: Song): Promise<string | null> => {
+      // On desktop with file path, read file and create blob URL
+      if (isDesktop() && song.filePath) {
+        const exists = await fileExists(song.filePath);
+        if (exists) {
+          return await getAssetUrl(song.filePath);
+        }
       }
-      return;
-    }
 
-    // Auto-play disabled
-    if (!autoPlay) {
-      setPlayerState((prev) => ({ ...prev, isPlaying: false }));
-      return;
-    }
+      // Fall back to memory cache (web or desktop without filePath)
+      const cachedFile = getCachedFile(song.id);
+      if (cachedFile) {
+        return URL.createObjectURL(cachedFile);
+      }
 
-    // Get next song to play
-    const nextIndex = getNextIndex(state);
+      return null;
+    },
+    [],
+  );
 
-    if (nextIndex !== null) {
-      playSongAtIndex(nextIndex);
-    } else {
-      // No more songs to play
-      setPlayerState((prev) => ({ ...prev, isPlaying: false }));
+  // Perform crossfade from current audio to next
+  const performCrossfade = useCallback(
+    async (nextIndex: number) => {
+      if (crossfadeInProgressRef.current) return;
+
+      const state = playerStateRef.current;
+      const allSongs = songsRef.current;
+      const crossfadeDuration = settingsRef.current?.crossfadeDuration || 0;
+
+      if (crossfadeDuration <= 0) return; // Crossfade disabled
+
+      const nextSongId = state.queue[nextIndex];
+      const nextSong = allSongs.find((s) => s.id === nextSongId);
+
+      if (!nextSong || !audioRef.current) return;
+
+      crossfadeInProgressRef.current = true;
+
+      // Create next audio element if needed
+      if (!nextAudioRef.current) {
+        nextAudioRef.current = new Audio();
+      }
+
+      const currentAudio = audioRef.current;
+      const nextAudio = nextAudioRef.current;
+
+      // Clean up previous next object URL
+      if (nextObjectUrlRef.current) {
+        URL.revokeObjectURL(nextObjectUrlRef.current);
+        nextObjectUrlRef.current = null;
+      }
+
+      try {
+        // Get audio URL for next song
+        const audioUrl = await getAudioUrl(nextSong);
+        if (!audioUrl) {
+          crossfadeInProgressRef.current = false;
+          return;
+        }
+
+        nextObjectUrlRef.current = audioUrl;
+        nextAudio.src = audioUrl;
+        nextAudio.volume = 0; // Start silent
+        nextAudio.playbackRate = state.speed;
+
+        // Wait for next audio to be ready
+        await new Promise<void>((resolve, reject) => {
+          const onCanPlay = () => {
+            nextAudio.removeEventListener("canplay", onCanPlay);
+            nextAudio.removeEventListener("error", onError);
+            resolve();
+          };
+          const onError = () => {
+            nextAudio.removeEventListener("canplay", onCanPlay);
+            nextAudio.removeEventListener("error", onError);
+            reject(new Error("Next audio load error"));
+          };
+          nextAudio.addEventListener("canplay", onCanPlay);
+          nextAudio.addEventListener("error", onError);
+          setTimeout(() => {
+            nextAudio.removeEventListener("canplay", onCanPlay);
+            nextAudio.removeEventListener("error", onError);
+            resolve();
+          }, 5000);
+        });
+
+        // Start playing next audio (muted)
+        await nextAudio.play();
+
+        // Perform the crossfade
+        const startVolume = currentAudio.volume;
+        const fadeSteps = 20;
+        const fadeInterval = (crossfadeDuration * 1000) / fadeSteps;
+        let step = 0;
+
+        crossfadeIntervalRef.current = setInterval(() => {
+          step++;
+          const progress = step / fadeSteps;
+
+          // Fade out current, fade in next
+          currentAudio.volume = Math.max(0, startVolume * (1 - progress));
+          nextAudio.volume = Math.min(startVolume, startVolume * progress);
+
+          if (step >= fadeSteps) {
+            // Crossfade complete
+            if (crossfadeIntervalRef.current) {
+              clearInterval(crossfadeIntervalRef.current);
+              crossfadeIntervalRef.current = null;
+            }
+
+            // Detach listeners from old audio
+            const oldHandlers = audioEventHandlersRef.current;
+            if (oldHandlers && currentAudio) {
+              currentAudio.removeEventListener(
+                "timeupdate",
+                oldHandlers.timeUpdate,
+              );
+              currentAudio.removeEventListener(
+                "durationchange",
+                oldHandlers.durationChange,
+              );
+              currentAudio.removeEventListener("ended", oldHandlers.ended);
+              currentAudio.removeEventListener("waiting", oldHandlers.waiting);
+              currentAudio.removeEventListener("canplay", oldHandlers.canPlay);
+              currentAudio.removeEventListener("error", oldHandlers.error);
+            }
+
+            // Stop current audio
+            currentAudio.pause();
+            currentAudio.currentTime = 0;
+            currentAudio.src = "";
+
+            // Swap audio elements
+            const tempUrl = objectUrlRef.current;
+            objectUrlRef.current = nextObjectUrlRef.current;
+            nextObjectUrlRef.current = tempUrl;
+
+            // Clean up old URL
+            if (nextObjectUrlRef.current) {
+              URL.revokeObjectURL(nextObjectUrlRef.current);
+              nextObjectUrlRef.current = null;
+            }
+
+            // Swap refs
+            const tempAudio = audioRef.current;
+            audioRef.current = nextAudioRef.current;
+            nextAudioRef.current = tempAudio;
+
+            // Attach listeners to new audio
+            if (audioRef.current) {
+              // Create new handlers for this audio element
+              const newAudio = audioRef.current;
+              const handlers = {
+                timeUpdate: () => {
+                  setCurrentTime(newAudio.currentTime);
+                  // Check crossfade
+                  const state = playerStateRef.current;
+                  const crossfadeDur =
+                    settingsRef.current?.crossfadeDuration || 0;
+                  if (
+                    crossfadeDur > 0 &&
+                    !crossfadeInProgressRef.current &&
+                    state.repeat !== "one" &&
+                    state.isPlaying &&
+                    newAudio.duration > 0
+                  ) {
+                    const timeRemaining =
+                      newAudio.duration - newAudio.currentTime;
+                    if (
+                      timeRemaining > 0 &&
+                      timeRemaining <= crossfadeDur &&
+                      newAudio.duration > crossfadeDur * 2
+                    ) {
+                      const nextIdx = getNextIndex(state);
+                      if (nextIdx !== null) {
+                        performCrossfade(nextIdx);
+                      }
+                    }
+                  }
+                },
+                durationChange: () => setDuration(newAudio.duration),
+                ended: () => {
+                  if (crossfadeInProgressRef.current) return;
+                  const state = playerStateRef.current;
+                  const autoPlay = settingsRef.current?.autoPlay !== false;
+                  setPlaybackState("ended");
+                  if (state.repeat === "one") {
+                    newAudio.currentTime = 0;
+                    newAudio.play();
+                    setPlaybackState("playing");
+                    return;
+                  }
+                  if (!autoPlay) {
+                    setPlayerState((prev) => ({ ...prev, isPlaying: false }));
+                    return;
+                  }
+                  const nextIdx = getNextIndex(state);
+                  if (nextIdx !== null) {
+                    playSongAtIndex(nextIdx);
+                  } else {
+                    setPlayerState((prev) => ({ ...prev, isPlaying: false }));
+                  }
+                },
+                waiting: () => setPlaybackState("buffering"),
+                canPlay: () => {
+                  if (playerStateRef.current.isPlaying)
+                    setPlaybackState("playing");
+                },
+                error: (e: Event) => {
+                  const targetAudio = e.target as HTMLAudioElement;
+                  const src = targetAudio.src || "";
+                  if (src && !src.startsWith(window.location.origin)) {
+                    console.error("Audio error:", e);
+                  }
+                  setPlaybackState("idle");
+                },
+              };
+
+              newAudio.addEventListener("timeupdate", handlers.timeUpdate);
+              newAudio.addEventListener(
+                "durationchange",
+                handlers.durationChange,
+              );
+              newAudio.addEventListener("ended", handlers.ended);
+              newAudio.addEventListener("waiting", handlers.waiting);
+              newAudio.addEventListener("canplay", handlers.canPlay);
+              newAudio.addEventListener("error", handlers.error);
+              audioEventHandlersRef.current = handlers;
+
+              // Ensure volume is correct
+              newAudio.volume = startVolume;
+
+              // Update duration immediately
+              setDuration(newAudio.duration || 0);
+            }
+
+            // Update state
+            setPlayerState((prev) => ({
+              ...prev,
+              currentSongId: nextSong.id,
+              queueIndex: nextIndex,
+            }));
+
+            // Update Media Session
+            if ("mediaSession" in navigator) {
+              try {
+                navigator.mediaSession.metadata = new MediaMetadata({
+                  title: nextSong.title,
+                  artist: nextSong.artist,
+                  album: nextSong.album,
+                });
+              } catch {
+                // Ignore
+              }
+            }
+
+            crossfadeInProgressRef.current = false;
+          }
+        }, fadeInterval);
+      } catch (error) {
+        console.error("Crossfade failed:", error);
+        crossfadeInProgressRef.current = false;
+      }
+    },
+    [getAudioUrl, getNextIndex, playSongAtIndex],
+  );
+
+  // Store event handlers in refs so they can be reattached after crossfade
+  const audioEventHandlersRef = useRef<{
+    timeUpdate: () => void;
+    durationChange: () => void;
+    ended: () => void;
+    waiting: () => void;
+    canPlay: () => void;
+    error: (e: Event) => void;
+  } | null>(null);
+
+  // Function to attach event listeners to an audio element
+  const attachAudioListeners = useCallback(
+    (audio: HTMLAudioElement) => {
+      // Create handlers that always read from refs (not closed over)
+      const handlers = {
+        timeUpdate: () => {
+          setCurrentTime(audio.currentTime);
+          // Check crossfade from the handler using the always-current audio
+          const state = playerStateRef.current;
+          const crossfadeDuration = settingsRef.current?.crossfadeDuration || 0;
+
+          if (
+            crossfadeDuration > 0 &&
+            !crossfadeInProgressRef.current &&
+            state.repeat !== "one" &&
+            state.isPlaying &&
+            audio.duration > 0
+          ) {
+            const timeRemaining = audio.duration - audio.currentTime;
+            if (
+              timeRemaining > 0 &&
+              timeRemaining <= crossfadeDuration &&
+              audio.duration > crossfadeDuration * 2
+            ) {
+              const nextIndex = getNextIndex(state);
+              if (nextIndex !== null) {
+                performCrossfade(nextIndex);
+              }
+            }
+          }
+        },
+        durationChange: () => setDuration(audio.duration),
+        ended: () => {
+          // If crossfade already handled the transition, skip
+          if (crossfadeInProgressRef.current) return;
+
+          const state = playerStateRef.current;
+          const autoPlay = settingsRef.current?.autoPlay !== false;
+
+          setPlaybackState("ended");
+
+          if (state.repeat === "one") {
+            audio.currentTime = 0;
+            audio.play();
+            setPlaybackState("playing");
+            return;
+          }
+
+          if (!autoPlay) {
+            setPlayerState((prev) => ({ ...prev, isPlaying: false }));
+            return;
+          }
+
+          const nextIndex = getNextIndex(state);
+          if (nextIndex !== null) {
+            playSongAtIndex(nextIndex);
+          } else {
+            setPlayerState((prev) => ({ ...prev, isPlaying: false }));
+          }
+        },
+        waiting: () => setPlaybackState("buffering"),
+        canPlay: () => {
+          if (playerStateRef.current.isPlaying) setPlaybackState("playing");
+        },
+        error: (e: Event) => {
+          const targetAudio = e.target as HTMLAudioElement;
+          const src = targetAudio.src || "";
+          const isValidSource =
+            src !== "" &&
+            !src.startsWith(
+              window.location.origin + window.location.pathname,
+            ) &&
+            src !== window.location.href &&
+            src !== "about:blank";
+
+          if (isValidSource) {
+            console.error("Audio error:", e);
+          }
+          setPlaybackState("idle");
+        },
+      };
+
+      audio.addEventListener("timeupdate", handlers.timeUpdate);
+      audio.addEventListener("durationchange", handlers.durationChange);
+      audio.addEventListener("ended", handlers.ended);
+      audio.addEventListener("waiting", handlers.waiting);
+      audio.addEventListener("canplay", handlers.canPlay);
+      audio.addEventListener("error", handlers.error);
+
+      audioEventHandlersRef.current = handlers;
+
+      return handlers;
+    },
+    [getNextIndex, performCrossfade, playSongAtIndex],
+  );
+
+  // Function to detach event listeners
+  const detachAudioListeners = useCallback((audio: HTMLAudioElement) => {
+    const handlers = audioEventHandlersRef.current;
+    if (handlers) {
+      audio.removeEventListener("timeupdate", handlers.timeUpdate);
+      audio.removeEventListener("durationchange", handlers.durationChange);
+      audio.removeEventListener("ended", handlers.ended);
+      audio.removeEventListener("waiting", handlers.waiting);
+      audio.removeEventListener("canplay", handlers.canPlay);
+      audio.removeEventListener("error", handlers.error);
     }
-  }, [playSongAtIndex, getNextIndex]);
+  }, []);
 
   // Initialize audio element
   useEffect(() => {
@@ -247,43 +617,31 @@ export function useAudioPlayer(songs: Song[], settings?: AppSettings) {
     audioRef.current.volume = settings?.defaultVolume ?? playerState.volume;
 
     const audio = audioRef.current;
-
-    const handleTimeUpdate = () => setCurrentTime(audio.currentTime);
-    const handleDurationChange = () => setDuration(audio.duration);
-    const handleEnded = () => handleSongEnd();
-    const handleWaiting = () => setPlaybackState("buffering");
-    const handleCanPlay = () => {
-      if (playerStateRef.current.isPlaying) setPlaybackState("playing");
-    };
-    const handleError = (e: Event) => {
-      console.error("Audio error:", e);
-      setPlaybackState("idle");
-    };
-
-    audio.addEventListener("timeupdate", handleTimeUpdate);
-    audio.addEventListener("durationchange", handleDurationChange);
-    audio.addEventListener("ended", handleEnded);
-    audio.addEventListener("waiting", handleWaiting);
-    audio.addEventListener("canplay", handleCanPlay);
-    audio.addEventListener("error", handleError);
+    attachAudioListeners(audio);
 
     // Load saved state
     loadSavedState();
 
     return () => {
-      audio.removeEventListener("timeupdate", handleTimeUpdate);
-      audio.removeEventListener("durationchange", handleDurationChange);
-      audio.removeEventListener("ended", handleEnded);
-      audio.removeEventListener("waiting", handleWaiting);
-      audio.removeEventListener("canplay", handleCanPlay);
-      audio.removeEventListener("error", handleError);
+      detachAudioListeners(audio);
       audio.pause();
       // Only revoke blob URLs
       if (objectUrlRef.current) {
         URL.revokeObjectURL(objectUrlRef.current);
       }
+      // Clean up crossfade interval
+      if (crossfadeIntervalRef.current) {
+        clearInterval(crossfadeIntervalRef.current);
+      }
+      // Clean up next audio
+      if (nextAudioRef.current) {
+        nextAudioRef.current.pause();
+      }
+      if (nextObjectUrlRef.current) {
+        URL.revokeObjectURL(nextObjectUrlRef.current);
+      }
     };
-  }, [handleSongEnd]);
+  }, [attachAudioListeners, detachAudioListeners]);
 
   // Load saved player state
   const loadSavedState = async () => {
@@ -374,13 +732,23 @@ export function useAudioPlayer(songs: Song[], settings?: AppSettings) {
       // Stop and reset current audio before loading new source
       audio.pause();
       audio.currentTime = 0;
-      audio.src = "";
 
       // Revoke previous blob URL (only blob: URLs need revoking)
       if (objectUrlRef.current) {
         URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = null;
       }
-      objectUrlRef.current = null;
+
+      // Clear source only if it was previously set (avoid triggering error for empty src)
+      if (
+        audio.src &&
+        audio.src !== "" &&
+        !audio.src.startsWith(window.location.origin)
+      ) {
+        audio.src = "";
+        audio.removeAttribute("src");
+        audio.load(); // Reset internal state
+      }
 
       setPlaybackState("buffering");
 
@@ -388,7 +756,7 @@ export function useAudioPlayer(songs: Song[], settings?: AppSettings) {
 
       try {
         // On desktop with file path, read file and create blob URL
-        if (isTauri() && song.filePath) {
+        if (isDesktop() && song.filePath) {
           const exists = await fileExists(song.filePath);
 
           if (exists) {
@@ -828,6 +1196,34 @@ export function useAudioPlayer(songs: Song[], settings?: AppSettings) {
     }
   }, [playerState.isPlaying, playerState.queueIndex]);
 
+  // Reorder the queue (for drag-and-drop)
+  const reorderQueue = useCallback((fromIndex: number, toIndex: number) => {
+    setPlayerState((prev) => {
+      const newQueue = [...prev.queue];
+      const [removed] = newQueue.splice(fromIndex, 1);
+      newQueue.splice(toIndex, 0, removed);
+
+      // Update queue index if the currently playing song was moved
+      let newQueueIndex = prev.queueIndex;
+      if (fromIndex === prev.queueIndex) {
+        // The currently playing song was moved
+        newQueueIndex = toIndex;
+      } else if (fromIndex < prev.queueIndex && toIndex >= prev.queueIndex) {
+        // Item moved from before current to after
+        newQueueIndex = prev.queueIndex - 1;
+      } else if (fromIndex > prev.queueIndex && toIndex <= prev.queueIndex) {
+        // Item moved from after current to before
+        newQueueIndex = prev.queueIndex + 1;
+      }
+
+      return {
+        ...prev,
+        queue: newQueue,
+        queueIndex: newQueueIndex,
+      };
+    });
+  }, []);
+
   // Get current song
   const currentSong = songs.find((s) => s.id === playerState.currentSongId);
 
@@ -864,6 +1260,7 @@ export function useAudioPlayer(songs: Song[], settings?: AppSettings) {
     toggleShuffle,
     setSpeed,
     removeSongFromQueue,
+    reorderQueue,
   };
 }
 

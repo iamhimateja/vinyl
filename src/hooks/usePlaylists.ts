@@ -22,7 +22,24 @@ export function usePlaylists() {
 
   const loadPlaylists = async () => {
     try {
-      const allPlaylists = await getAllPlaylists();
+      let allPlaylists = await getAllPlaylists();
+
+      // Ensure Favorites playlist always exists
+      const hasFavorites = allPlaylists.some(
+        (p) => p.name === FAVORITES_PLAYLIST_NAME,
+      );
+      if (!hasFavorites) {
+        const favoritesPlaylist: Playlist = {
+          id: generateId(),
+          name: FAVORITES_PLAYLIST_NAME,
+          songIds: [],
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+        await dbAddPlaylist(favoritesPlaylist);
+        allPlaylists = [favoritesPlaylist, ...allPlaylists];
+      }
+
       setPlaylists(allPlaylists.reverse());
     } catch (error) {
       console.error("Failed to load playlists:", error);

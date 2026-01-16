@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useLocation } from "react-router-dom";
 import {
   Play,
   Pause,
@@ -10,14 +11,23 @@ import {
   SlidersHorizontal,
   X,
   Heart,
+  Disc3,
+  Image,
+  Info,
+  FolderOpen,
 } from "lucide-react";
+import { formatDuration } from "../lib/audioMetadata";
 import type { Song, Playlist, PlaybackState } from "../types";
 import type { EqualizerBand, EqualizerPreset } from "../hooks/useEqualizer";
+import type { VisualizerStyle } from "../hooks/useAudioVisualizer";
 import { VinylPlayer } from "./VinylPlayer";
 import { NowPlaying } from "./NowPlaying";
 import { PlayerControls } from "./PlayerControls";
-import { VirtualizedSongList } from "./VirtualizedSongList";
+import { DraggableQueueList } from "./DraggableQueueList";
 import { Equalizer } from "./Equalizer";
+import { SleepTimer } from "./SleepTimer";
+import { VisualizerToggle } from "./VisualizerStylePicker";
+import { AudioVisualizer } from "./AudioVisualizer";
 import { tooltipProps } from "./Tooltip";
 
 interface PlayerOverlayProps {
@@ -43,6 +53,23 @@ interface PlayerOverlayProps {
   onEqPresetChange: (preset: EqualizerPreset) => void;
   onEqReset: () => void;
   onEqToggleEnabled: () => void;
+  // Sleep timer props
+  sleepTimerActive: boolean;
+  sleepTimerRemainingTime: string;
+  sleepTimerProgress: number;
+  onSleepTimerStart: (seconds: number) => void;
+  onSleepTimerStop: () => void;
+  onSleepTimerAddTime: (seconds: number) => void;
+  // Display mode
+  displayMode: "vinyl" | "albumArt";
+  onDisplayModeChange: (mode: "vinyl" | "albumArt") => void;
+  // Visualizer props
+  visualizerEnabled: boolean;
+  visualizerStyle: VisualizerStyle;
+  frequencyData: Uint8Array;
+  waveformData: Uint8Array;
+  onVisualizerToggle: () => void;
+  onVisualizerStyleChange: (style: VisualizerStyle) => void;
   // Player callbacks
   onTogglePlayPause: () => void;
   onNext: () => void;
@@ -55,6 +82,7 @@ interface PlayerOverlayProps {
   onPlayFromQueue: (song: Song) => void;
   onStop: () => void;
   onDeleteFromQueue: (songId: string) => void;
+  onReorderQueue: (fromIndex: number, toIndex: number) => void;
   onToggleFavorite?: () => void;
 }
 
@@ -86,7 +114,7 @@ function MiniPlayer({
 }) {
   return (
     <div
-      className={`fixed left-0 right-0 bottom-16 md:bottom-0 md:left-64 z-40 transition-transform duration-300 ease-out ${
+      className={`fixed left-0 right-0 bottom-16 md:bottom-0 md:left-16 z-40 transition-transform duration-300 ease-out ${
         isVisible ? "translate-y-0" : "translate-y-full"
       }`}
     >
@@ -207,6 +235,7 @@ function MiniPlayer({
 
 // Expanded Now Playing Component
 function ExpandedPlayer({
+  isClosing,
   currentSong,
   isPlaying,
   playbackState,
@@ -226,6 +255,23 @@ function ExpandedPlayer({
   eqEnabled,
   eqPreset,
   eqConnected,
+  // Sleep timer
+  sleepTimerActive,
+  sleepTimerRemainingTime,
+  sleepTimerProgress,
+  onSleepTimerStart,
+  onSleepTimerStop,
+  onSleepTimerAddTime,
+  // Display mode
+  displayMode,
+  onDisplayModeChange,
+  // Visualizer
+  visualizerEnabled,
+  visualizerStyle,
+  frequencyData,
+  waveformData,
+  onVisualizerToggle,
+  onVisualizerStyleChange,
   onCollapse,
   onToggleQueue,
   onCloseQueue,
@@ -247,7 +293,9 @@ function ExpandedPlayer({
   onPlayFromQueue,
   onStop,
   onDeleteFromQueue,
+  onReorderQueue,
 }: {
+  isClosing: boolean;
   currentSong: Song;
   isPlaying: boolean;
   playbackState: PlaybackState;
@@ -267,6 +315,23 @@ function ExpandedPlayer({
   eqEnabled: boolean;
   eqPreset: string | null;
   eqConnected: boolean;
+  // Sleep timer
+  sleepTimerActive: boolean;
+  sleepTimerRemainingTime: string;
+  sleepTimerProgress: number;
+  onSleepTimerStart: (seconds: number) => void;
+  onSleepTimerStop: () => void;
+  onSleepTimerAddTime: (seconds: number) => void;
+  // Display mode
+  displayMode: "vinyl" | "albumArt";
+  onDisplayModeChange: (mode: "vinyl" | "albumArt") => void;
+  // Visualizer
+  visualizerEnabled: boolean;
+  visualizerStyle: VisualizerStyle;
+  frequencyData: Uint8Array;
+  waveformData: Uint8Array;
+  onVisualizerToggle: () => void;
+  onVisualizerStyleChange: (style: VisualizerStyle) => void;
   onCollapse: () => void;
   onToggleQueue: () => void;
   onCloseQueue: () => void;
@@ -288,7 +353,9 @@ function ExpandedPlayer({
   onPlayFromQueue: (song: Song) => void;
   onStop: () => void;
   onDeleteFromQueue: (songId: string) => void;
+  onReorderQueue: (fromIndex: number, toIndex: number) => void;
 }) {
+  const [showInfo, setShowInfo] = useState(false);
   const startY = useRef<number | null>(null);
 
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -308,8 +375,9 @@ function ExpandedPlayer({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-vinyl-bg flex flex-col transition-transform duration-300 ease-out"
-      style={{ animation: "slideUp 0.3s ease-out forwards" }}
+      className={`fixed inset-y-0 left-0 right-0 md:left-16 z-50 bg-vinyl-bg flex flex-col transition-transform duration-300 ease-out ${
+        isClosing ? "animate-slideDown" : "animate-slideUp"
+      }`}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
@@ -373,8 +441,63 @@ function ExpandedPlayer({
               />
             </button>
           )}
+          {/* Song Info */}
           <button
-            onClick={onToggleEqualizer}
+            onClick={() => {
+              onCloseQueue();
+              onCloseEqualizer();
+              setShowInfo(!showInfo);
+            }}
+            className={`p-2 rounded-full transition-colors ${
+              showInfo
+                ? "text-vinyl-accent bg-vinyl-accent/20"
+                : "text-vinyl-text-muted hover:text-vinyl-text hover:bg-vinyl-surface/50"
+            }`}
+            {...tooltipProps("Song Info")}
+          >
+            <Info className="w-5 h-5" />
+          </button>
+          {/* Display Mode Toggle */}
+          <button
+            onClick={() =>
+              onDisplayModeChange(
+                displayMode === "vinyl" ? "albumArt" : "vinyl",
+              )
+            }
+            className="p-2 rounded-full transition-colors text-vinyl-text-muted hover:text-vinyl-text hover:bg-vinyl-surface/50"
+            {...tooltipProps(
+              displayMode === "vinyl"
+                ? "Switch to Album Art"
+                : "Switch to Vinyl",
+            )}
+          >
+            {displayMode === "vinyl" ? (
+              <Image className="w-5 h-5" />
+            ) : (
+              <Disc3 className="w-5 h-5" />
+            )}
+          </button>
+          {/* Sleep Timer */}
+          <SleepTimer
+            isActive={sleepTimerActive}
+            remainingTime={sleepTimerRemainingTime}
+            progress={sleepTimerProgress}
+            onStart={onSleepTimerStart}
+            onStop={onSleepTimerStop}
+            onAddTime={onSleepTimerAddTime}
+          />
+          {/* Visualizer Toggle */}
+          <VisualizerToggle
+            enabled={visualizerEnabled}
+            currentStyle={visualizerStyle}
+            onToggle={onVisualizerToggle}
+            onStyleChange={onVisualizerStyleChange}
+          />
+          <button
+            onClick={() => {
+              setShowInfo(false);
+              onToggleEqualizer();
+            }}
             className={`p-2 rounded-full transition-colors ${
               showEqualizer
                 ? "text-vinyl-accent bg-vinyl-accent/20"
@@ -385,7 +508,10 @@ function ExpandedPlayer({
             <SlidersHorizontal className="w-6 h-6" />
           </button>
           <button
-            onClick={onToggleQueue}
+            onClick={() => {
+              setShowInfo(false);
+              onToggleQueue();
+            }}
             className={`p-2 rounded-full transition-colors ${
               showQueue
                 ? "text-vinyl-accent bg-vinyl-accent/20"
@@ -399,20 +525,65 @@ function ExpandedPlayer({
       </div>
 
       {/* Main content */}
-      <div className="relative z-10 flex-1 flex flex-col px-6 pb-6 overflow-auto min-h-0">
-        {/* Vinyl player */}
-        <div className="flex-1 flex items-center justify-center min-h-[250px]">
-          <VinylPlayer
-            currentSong={currentSong}
-            isPlaying={isPlaying}
-            playbackState={playbackState}
-            speed={speed}
-            showAlbumArt={showAlbumArt}
-          />
+      <div className="relative flex-1 flex flex-col overflow-auto min-h-0">
+        {/* Background Visualizer - full screen behind content with gooey effect */}
+        {visualizerEnabled && (
+          <>
+            <div
+              className="absolute inset-0 z-0"
+              style={{ filter: "contrast(3) brightness(1.1)" }}
+            >
+              <div className="w-full h-full" style={{ filter: "blur(18px)" }}>
+                <AudioVisualizer
+                  frequencyData={frequencyData}
+                  waveformData={waveformData}
+                  style={visualizerStyle}
+                  isPlaying={isPlaying}
+                  height={800}
+                  className="w-full h-full opacity-70"
+                />
+              </div>
+            </div>
+            {/* Tint overlay */}
+            <div className="absolute inset-0 z-[1] bg-vinyl-bg/30" />
+          </>
+        )}
+
+        {/* Main display area - Vinyl or Album Art */}
+        <div className="relative z-[2] flex-1 flex flex-col items-center justify-center min-h-[250px] px-6">
+          {/* Vinyl Player */}
+          {displayMode === "vinyl" && (
+            <VinylPlayer
+              currentSong={currentSong}
+              isPlaying={isPlaying}
+              playbackState={playbackState}
+              speed={speed}
+              showAlbumArt={showAlbumArt}
+            />
+          )}
+
+          {/* Album Art Only */}
+          {displayMode === "albumArt" && (
+            <div className="w-64 h-64 md:w-80 md:h-80 rounded-2xl overflow-hidden shadow-2xl bg-vinyl-surface">
+              {currentSong.coverArt ? (
+                <img
+                  src={currentSong.coverArt}
+                  alt={currentSong.title}
+                  className={`w-full h-full object-cover transition-transform duration-500 ${
+                    isPlaying ? "scale-105" : "scale-100"
+                  }`}
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center bg-vinyl-border">
+                  <Music className="w-24 h-24 text-vinyl-text-muted" />
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Song info and controls */}
-        <div className="w-full max-w-2xl mx-auto space-y-4 flex-shrink-0">
+        <div className="relative z-[2] w-full max-w-2xl mx-auto space-y-4 flex-shrink-0 px-6 pb-6">
           <NowPlaying song={currentSong} />
           <PlayerControls
             isPlaying={isPlaying}
@@ -436,12 +607,13 @@ function ExpandedPlayer({
       </div>
 
       {/* Drawer Backdrop */}
-      {(showQueue || showEqualizer) && (
+      {(showQueue || showEqualizer || showInfo) && (
         <div
           className="fixed inset-0 bg-black/40 z-50"
           onClick={() => {
             onCloseQueue();
             onCloseEqualizer();
+            setShowInfo(false);
           }}
         />
       )}
@@ -468,18 +640,20 @@ function ExpandedPlayer({
           </button>
         </div>
 
-        {/* Queue list */}
-        <div className="h-[calc(100%-4.5rem)] p-2">
-          <VirtualizedSongList
-            songs={queueSongs}
-            currentSongId={currentSong.id}
-            isPlaying={isPlaying}
-            onPlay={onPlayFromQueue}
-            onTogglePlayPause={onTogglePlayPause}
-            onStop={onStop}
-            onDelete={onDeleteFromQueue}
-            compact
-          />
+        {/* Queue list - draggable - only render when visible to avoid dnd-kit DOM issues */}
+        <div className="h-[calc(100%-4.5rem)]">
+          {showQueue && (
+            <DraggableQueueList
+              songs={queueSongs}
+              currentSongId={currentSong.id}
+              isPlaying={isPlaying}
+              onPlay={onPlayFromQueue}
+              onTogglePlayPause={onTogglePlayPause}
+              onStop={onStop}
+              onDelete={onDeleteFromQueue}
+              onReorder={onReorderQueue}
+            />
+          )}
         </div>
       </div>
 
@@ -517,6 +691,154 @@ function ExpandedPlayer({
           />
         </div>
       </div>
+
+      {/* Song Info Drawer */}
+      <div
+        className={`fixed inset-y-0 right-0 w-full max-w-md bg-vinyl-surface border-l border-vinyl-border z-50 transition-transform duration-300 ease-out shadow-2xl ${
+          showInfo ? "translate-x-0" : "translate-x-full"
+        }`}
+      >
+        {/* Drawer header */}
+        <div className="flex items-center justify-between p-4 border-b border-vinyl-border">
+          <div className="flex items-center gap-2">
+            <Info className="w-5 h-5 text-vinyl-accent" />
+            <h2 className="text-lg font-semibold text-vinyl-text">Song Info</h2>
+          </div>
+          <button
+            onClick={() => setShowInfo(false)}
+            className="p-2 rounded-full text-vinyl-text-muted hover:text-vinyl-text hover:bg-vinyl-border transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Song Info content */}
+        <div className="p-4 overflow-auto h-[calc(100%-4.5rem)]">
+          {/* Album Art */}
+          <div className="flex justify-center mb-6">
+            <div className="w-48 h-48 rounded-xl overflow-hidden shadow-lg bg-vinyl-border">
+              {currentSong.coverArt ? (
+                <img
+                  src={currentSong.coverArt}
+                  alt={currentSong.album}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center">
+                  <Music className="w-16 h-16 text-vinyl-text-muted" />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Metadata */}
+          <div className="space-y-4">
+            {/* Title */}
+            <div>
+              <label className="text-xs text-vinyl-text-muted uppercase tracking-wider">
+                Title
+              </label>
+              <p className="text-vinyl-text font-medium mt-1">
+                {currentSong.title}
+              </p>
+            </div>
+
+            {/* Artist */}
+            <div>
+              <label className="text-xs text-vinyl-text-muted uppercase tracking-wider">
+                Artist
+              </label>
+              <p className="text-vinyl-text mt-1">{currentSong.artist}</p>
+            </div>
+
+            {/* Album */}
+            <div>
+              <label className="text-xs text-vinyl-text-muted uppercase tracking-wider">
+                Album
+              </label>
+              <p className="text-vinyl-text mt-1">{currentSong.album}</p>
+            </div>
+
+            {/* Duration */}
+            <div>
+              <label className="text-xs text-vinyl-text-muted uppercase tracking-wider">
+                Duration
+              </label>
+              <p className="text-vinyl-text mt-1">
+                {formatDuration(currentSong.duration)}
+              </p>
+            </div>
+
+            {/* File Name */}
+            {currentSong.fileName && (
+              <div>
+                <label className="text-xs text-vinyl-text-muted uppercase tracking-wider">
+                  File Name
+                </label>
+                <p className="text-vinyl-text mt-1 text-sm break-all">
+                  {currentSong.fileName}
+                </p>
+              </div>
+            )}
+
+            {/* File Size */}
+            {currentSong.fileSize && (
+              <div>
+                <label className="text-xs text-vinyl-text-muted uppercase tracking-wider">
+                  File Size
+                </label>
+                <p className="text-vinyl-text mt-1">
+                  {(currentSong.fileSize / (1024 * 1024)).toFixed(2)} MB
+                </p>
+              </div>
+            )}
+
+            {/* File Path */}
+            {currentSong.filePath && (
+              <div>
+                <label className="text-xs text-vinyl-text-muted uppercase tracking-wider">
+                  File Path
+                </label>
+                <p className="text-vinyl-text mt-1 text-sm break-all">
+                  {currentSong.filePath}
+                </p>
+              </div>
+            )}
+
+            {/* Added Date */}
+            <div>
+              <label className="text-xs text-vinyl-text-muted uppercase tracking-wider">
+                Added
+              </label>
+              <p className="text-vinyl-text mt-1">
+                {new Date(currentSong.addedAt).toLocaleDateString(undefined, {
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+                })}
+              </p>
+            </div>
+
+            {/* Open in Finder button - only show if file path exists */}
+            {currentSong.filePath && (
+              <div className="pt-4 border-t border-vinyl-border">
+                <button
+                  onClick={() => {
+                    // Use Electron API to open in file manager
+                    if (window.electron?.showItemInFolder) {
+                      window.electron.showItemInFolder(currentSong.filePath!);
+                    }
+                  }}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-vinyl-border hover:bg-vinyl-border/70 text-vinyl-text rounded-lg transition-colors"
+                >
+                  <FolderOpen className="w-5 h-5" />
+                  <span>Show in File Manager</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -543,6 +865,23 @@ export function PlayerOverlay({
   onEqPresetChange,
   onEqReset,
   onEqToggleEnabled,
+  // Sleep timer
+  sleepTimerActive,
+  sleepTimerRemainingTime,
+  sleepTimerProgress,
+  onSleepTimerStart,
+  onSleepTimerStop,
+  onSleepTimerAddTime,
+  // Display mode
+  displayMode,
+  onDisplayModeChange,
+  // Visualizer
+  visualizerEnabled,
+  visualizerStyle,
+  frequencyData,
+  waveformData,
+  onVisualizerToggle,
+  onVisualizerStyleChange,
   onTogglePlayPause,
   onNext,
   onPrevious,
@@ -554,14 +893,24 @@ export function PlayerOverlay({
   onPlayFromQueue,
   onStop,
   onDeleteFromQueue,
+  onReorderQueue,
   onToggleFavorite,
 }: PlayerOverlayProps) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
   const [showQueue, setShowQueue] = useState(false);
   const [showEqualizer, setShowEqualizer] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
+  const location = useLocation();
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+
+  // Collapse expanded player when route changes
+  useEffect(() => {
+    if (isExpanded && !isClosing) {
+      handleCollapse();
+    }
+  }, [location.pathname]);
 
   // Show/hide the mini player based on whether there's a current song
   useEffect(() => {
@@ -571,19 +920,26 @@ export function PlayerOverlay({
     } else {
       setIsVisible(false);
       setIsExpanded(false);
+      setIsClosing(false);
       setShowQueue(false);
       setShowEqualizer(false);
     }
   }, [currentSong]);
 
   const handleExpand = () => {
+    setIsClosing(false);
     setIsExpanded(true);
   };
 
   const handleCollapse = () => {
     setShowQueue(false);
     setShowEqualizer(false);
-    setIsExpanded(false);
+    setIsClosing(true);
+    // Wait for animation to complete before hiding
+    setTimeout(() => {
+      setIsExpanded(false);
+      setIsClosing(false);
+    }, 280);
   };
 
   // Don't render anything if no song
@@ -613,6 +969,7 @@ export function PlayerOverlay({
       {/* Expanded Now Playing View */}
       {isExpanded && (
         <ExpandedPlayer
+          isClosing={isClosing}
           currentSong={currentSong}
           isPlaying={isPlaying}
           playbackState={playbackState}
@@ -632,6 +989,20 @@ export function PlayerOverlay({
           eqEnabled={eqEnabled}
           eqPreset={eqPreset}
           eqConnected={eqConnected}
+          sleepTimerActive={sleepTimerActive}
+          sleepTimerRemainingTime={sleepTimerRemainingTime}
+          sleepTimerProgress={sleepTimerProgress}
+          onSleepTimerStart={onSleepTimerStart}
+          onSleepTimerStop={onSleepTimerStop}
+          onSleepTimerAddTime={onSleepTimerAddTime}
+          displayMode={displayMode}
+          onDisplayModeChange={onDisplayModeChange}
+          visualizerEnabled={visualizerEnabled}
+          visualizerStyle={visualizerStyle}
+          frequencyData={frequencyData}
+          waveformData={waveformData}
+          onVisualizerToggle={onVisualizerToggle}
+          onVisualizerStyleChange={onVisualizerStyleChange}
           onCollapse={handleCollapse}
           onToggleQueue={() => {
             setShowEqualizer(false);
@@ -659,6 +1030,7 @@ export function PlayerOverlay({
           onPlayFromQueue={onPlayFromQueue}
           onStop={onStop}
           onDeleteFromQueue={onDeleteFromQueue}
+          onReorderQueue={onReorderQueue}
         />
       )}
     </>
