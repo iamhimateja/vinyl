@@ -16,6 +16,10 @@ dist-electron
 # Test coverage
 coverage/
 
+# Playwright
+playwright-report/
+test-results/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
