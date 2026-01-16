@@ -191,7 +191,7 @@ export function usePlaylists() {
   // Toggle favorite status for a song
   const toggleFavorite = useCallback(
     async (songId: string) => {
-      let favorites = favoritesPlaylist;
+      const favorites = favoritesPlaylist;
 
       // Create Favorites playlist if it doesn't exist
       if (!favorites) {
