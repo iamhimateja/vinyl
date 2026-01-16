@@ -203,6 +203,16 @@ function App() {
     );
   }, [settings.theme]);
 
+  // Apply electron class for desktop-specific styles (e.g., disable text selection)
+  useEffect(() => {
+    if (checkIsDesktop()) {
+      document.documentElement.classList.add("electron");
+    }
+    return () => {
+      document.documentElement.classList.remove("electron");
+    };
+  }, []);
+
   const {
     songs,
     isLoading,
