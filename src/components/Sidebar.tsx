@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { NavLink } from "react-router-dom";
 import {
   Disc3,
@@ -11,8 +12,10 @@ import {
   Sun,
   Moon,
   Info,
+  HelpCircle,
 } from "lucide-react";
 import { tooltipProps } from "./Tooltip";
+import { KeyboardShortcutsDialog } from "./KeyboardShortcutsDialog";
 import type { AppSettings, Theme } from "../types";
 
 interface SidebarProps {
@@ -51,6 +54,28 @@ export function Sidebar({
   onToggleTheme,
 }: SidebarProps) {
   const AppIcon = ICON_MAP[appIcon] || Disc3;
+  const [showShortcuts, setShowShortcuts] = useState(false);
+
+  // Listen for ? key to open shortcuts dialog
+  useEffect(() => {
+    const handleQuestionMark = (e: KeyboardEvent) => {
+      if (e.key === "?" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const target = e.target as HTMLElement;
+        if (
+          target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable
+        ) {
+          return;
+        }
+        e.preventDefault();
+        setShowShortcuts((prev) => !prev);
+      }
+    };
+
+    document.addEventListener("keydown", handleQuestionMark);
+    return () => document.removeEventListener("keydown", handleQuestionMark);
+  }, []);
 
   return (
     <aside className="w-16 h-screen bg-vinyl-surface/95 backdrop-blur-sm border-r border-vinyl-border flex flex-col items-center flex-shrink-0 fixed left-0 top-0 z-[60] py-4">
@@ -105,6 +130,15 @@ export function Sidebar({
           </button>
         )}
 
+        {/* Keyboard shortcuts help */}
+        <button
+          onClick={() => setShowShortcuts(true)}
+          className="w-10 h-10 flex items-center justify-center rounded-xl transition-colors text-vinyl-text-muted hover:text-vinyl-text hover:bg-vinyl-border/50"
+          {...tooltipProps("Keyboard Shortcuts (?)", "right")}
+        >
+          <HelpCircle className="w-5 h-5" />
+        </button>
+
         {/* About link */}
         <NavLink
           to="/about"
@@ -143,6 +177,12 @@ export function Sidebar({
           </button>
         )}
       </div>
+
+      {/* Keyboard Shortcuts Dialog */}
+      <KeyboardShortcutsDialog
+        isOpen={showShortcuts}
+        onClose={() => setShowShortcuts(false)}
+      />
     </aside>
   );
 }

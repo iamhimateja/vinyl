@@ -26,6 +26,7 @@ import { usePWA } from "./hooks/usePWA";
 import { useSleepTimer } from "./hooks/useSleepTimer";
 import { useAudioVisualizer } from "./hooks/useAudioVisualizer";
 import { useLibrary } from "./hooks/useLibrary";
+import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { clearAllData } from "./lib/db";
 import {
   isDesktop as checkIsDesktop,
@@ -281,6 +282,31 @@ function App() {
     audioElement,
     settings.visualizerEnabled && isPlaying,
   );
+
+  // Track previous volume for mute toggle
+  const previousVolumeRef = useRef(volume);
+
+  // Keyboard shortcuts for playback control
+  useKeyboardShortcuts({
+    onPlayPause: togglePlayPause,
+    onNext: playNext,
+    onPrevious: playPrevious,
+    onVolumeUp: () => setVolume(Math.min(1, volume + 0.1)),
+    onVolumeDown: () => setVolume(Math.max(0, volume - 0.1)),
+    onMute: () => {
+      if (volume > 0) {
+        previousVolumeRef.current = volume;
+        setVolume(0);
+      } else {
+        setVolume(previousVolumeRef.current || 0.5);
+      }
+    },
+    onToggleShuffle: toggleShuffle,
+    onToggleRepeat: toggleRepeat,
+    onSeekForward: () => seek(Math.min(duration, currentTime + 5)),
+    onSeekBackward: () => seek(Math.max(0, currentTime - 5)),
+    enabled: !showFirstLaunchWizard,
+  });
 
   // Get current playlist object
   const currentPlaylist =
