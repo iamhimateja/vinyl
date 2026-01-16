@@ -110,7 +110,7 @@ export function connectFilesToSongs(
   for (const file of files) {
     // Try to match by filename first
     const fileKey1 = file.name.toLowerCase();
-    let matchedSong = songLookup.get(fileKey1);
+    const matchedSong = songLookup.get(fileKey1);
 
     // If not found, the file might have been renamed - we can't match it easily
     // User would need to re-import it
