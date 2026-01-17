@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, shell, Tray, Menu, nativeImage } = require("electron");
 const path = require("path");
 const fs = require("fs");
 
@@ -16,6 +16,11 @@ async function initStore() {
 }
 
 let mainWindow;
+let tray = null;
+let currentPlaybackState = {
+  isPlaying: false,
+  song: null,
+};
 
 // Supported audio extensions
 const AUDIO_EXTENSIONS = [
@@ -68,6 +73,157 @@ function scanMusicFolder(folderPath, rootPath = folderPath) {
 
   return results;
 }
+
+// ============================================
+// System Tray
+// ============================================
+
+function createTrayIcon() {
+  // Create a simple music note icon using nativeImage
+  // For production, you'd want to use proper icon files
+  const iconPath = path.join(__dirname, "../public/icons/icon.svg");
+  
+  let trayIcon;
+  
+  // Try to load the SVG icon, fall back to creating one if it fails
+  if (fs.existsSync(iconPath)) {
+    // Create a small icon for the tray (16x16 on most platforms)
+    trayIcon = nativeImage.createFromPath(iconPath);
+    // Resize for tray (macOS uses 16x16, Windows uses 16x16 or 32x32)
+    trayIcon = trayIcon.resize({ width: 16, height: 16 });
+  } else {
+    // Create a simple placeholder icon
+    trayIcon = nativeImage.createEmpty();
+  }
+  
+  return trayIcon;
+}
+
+function createTray() {
+  if (tray) {
+    return; // Tray already exists
+  }
+
+  const icon = createTrayIcon();
+  tray = new Tray(icon);
+  
+  tray.setToolTip('Vinyl Music Player');
+  
+  // Click handler - show/focus the main window
+  tray.on('click', () => {
+    showMainWindow();
+  });
+  
+  // Double-click handler (Windows)
+  tray.on('double-click', () => {
+    showMainWindow();
+  });
+  
+  updateTrayMenu();
+  console.log("[Tray] System tray created");
+}
+
+function updateTrayMenu() {
+  if (!tray) return;
+  
+  const { isPlaying, song } = currentPlaybackState;
+  
+  const menuTemplate = [];
+  
+  // Show current song info if available
+  if (song) {
+    menuTemplate.push({
+      label: song.title || 'Unknown Title',
+      enabled: false,
+    });
+    menuTemplate.push({
+      label: song.artist || 'Unknown Artist',
+      enabled: false,
+    });
+    menuTemplate.push({ type: 'separator' });
+  }
+  
+  // Playback controls
+  menuTemplate.push({
+    label: isPlaying ? '⏸ Pause' : '▶ Play',
+    click: () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('tray:playPause');
+      }
+    },
+  });
+  
+  menuTemplate.push({
+    label: '⏮ Previous',
+    click: () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('tray:previous');
+      }
+    },
+  });
+  
+  menuTemplate.push({
+    label: '⏭ Next',
+    click: () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('tray:next');
+      }
+    },
+  });
+  
+  menuTemplate.push({ type: 'separator' });
+  
+  menuTemplate.push({
+    label: 'Show Vinyl',
+    click: () => {
+      showMainWindow();
+    },
+  });
+  
+  menuTemplate.push({ type: 'separator' });
+  
+  menuTemplate.push({
+    label: 'Quit',
+    click: () => {
+      app.quit();
+    },
+  });
+  
+  const contextMenu = Menu.buildFromTemplate(menuTemplate);
+  tray.setContextMenu(contextMenu);
+  
+  // Update tooltip with current song
+  if (song) {
+    const status = isPlaying ? '▶' : '⏸';
+    tray.setToolTip(`${status} ${song.title} - ${song.artist}`);
+  } else {
+    tray.setToolTip('Vinyl Music Player');
+  }
+}
+
+function showMainWindow() {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+    mainWindow.show();
+    mainWindow.focus();
+  } else {
+    createWindow();
+  }
+}
+
+function destroyTray() {
+  if (tray) {
+    tray.destroy();
+    tray = null;
+    console.log("[Tray] System tray destroyed");
+  }
+}
+
+// ============================================
+// Main Window
+// ============================================
 
 function createWindow() {
   console.log("[Electron] Creating window...");
@@ -153,7 +309,9 @@ function createWindow() {
   });
 }
 
+// ============================================
 // IPC Handlers
+// ============================================
 
 // Open folder picker dialog
 ipcMain.handle("dialog:openFolder", async () => {
@@ -357,6 +515,41 @@ ipcMain.handle("shell:showItemInFolder", async (event, filePath) => {
 });
 
 // ============================================
+// System Tray IPC Handlers
+// ============================================
+
+// Update playback state (called from renderer)
+ipcMain.handle("tray:updatePlaybackState", async (event, state) => {
+  currentPlaybackState = {
+    isPlaying: state.isPlaying || false,
+    song: state.song || null,
+  };
+  
+  // Create tray if it doesn't exist and we're playing
+  if (currentPlaybackState.isPlaying && !tray) {
+    createTray();
+  }
+  
+  // Update tray menu and tooltip
+  if (tray) {
+    updateTrayMenu();
+  }
+  
+  return { success: true };
+});
+
+// Show/hide tray
+ipcMain.handle("tray:show", async () => {
+  createTray();
+  return { success: true };
+});
+
+ipcMain.handle("tray:hide", async () => {
+  destroyTray();
+  return { success: true };
+});
+
+// ============================================
 // File Watcher (Auto-detect new songs)
 // ============================================
 
@@ -511,12 +704,18 @@ ipcMain.handle("library:getWatcherStatus", async () => {
   };
 });
 
+// ============================================
 // App lifecycle
+// ============================================
+
 app.whenReady().then(async () => {
   // Initialize store first
   await initStore();
 
   createWindow();
+  
+  // Create tray on startup (will be updated when playback starts)
+  createTray();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -529,6 +728,11 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
   }
+});
+
+// Clean up tray on quit
+app.on("before-quit", () => {
+  destroyTray();
 });
 
 // Handle any uncaught errors

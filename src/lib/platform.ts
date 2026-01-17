@@ -522,3 +522,99 @@ export async function resetSetup(): Promise<boolean> {
   localStorage.removeItem("vinyl-setup-completed");
   return true;
 }
+
+// ============================================
+// System Tray (Desktop only)
+// ============================================
+
+export interface TrayPlaybackState {
+  isPlaying: boolean;
+  song: {
+    title: string;
+    artist: string;
+    album?: string;
+  } | null;
+}
+
+/**
+ * Update the system tray with current playback state
+ */
+export async function updateTrayPlaybackState(
+  state: TrayPlaybackState,
+): Promise<void> {
+  if (isElectron() && (window.electron as ElectronAPIWithTray)?.tray) {
+    try {
+      await (window.electron as ElectronAPIWithTray).tray.updatePlaybackState(state);
+    } catch (error) {
+      console.error("Failed to update tray playback state:", error);
+    }
+  }
+}
+
+/**
+ * Show the system tray
+ */
+export async function showTray(): Promise<void> {
+  if (isElectron() && (window.electron as ElectronAPIWithTray)?.tray) {
+    try {
+      await (window.electron as ElectronAPIWithTray).tray.show();
+    } catch (error) {
+      console.error("Failed to show tray:", error);
+    }
+  }
+}
+
+/**
+ * Hide the system tray
+ */
+export async function hideTray(): Promise<void> {
+  if (isElectron() && (window.electron as ElectronAPIWithTray)?.tray) {
+    try {
+      await (window.electron as ElectronAPIWithTray).tray.hide();
+    } catch (error) {
+      console.error("Failed to hide tray:", error);
+    }
+  }
+}
+
+/**
+ * Subscribe to tray play/pause events
+ */
+export function onTrayPlayPause(callback: () => void): () => void {
+  if (isElectron() && (window.electron as ElectronAPIWithTray)?.tray) {
+    return (window.electron as ElectronAPIWithTray).tray.onPlayPause(callback);
+  }
+  return () => {};
+}
+
+/**
+ * Subscribe to tray next track events
+ */
+export function onTrayNext(callback: () => void): () => void {
+  if (isElectron() && (window.electron as ElectronAPIWithTray)?.tray) {
+    return (window.electron as ElectronAPIWithTray).tray.onNext(callback);
+  }
+  return () => {};
+}
+
+/**
+ * Subscribe to tray previous track events
+ */
+export function onTrayPrevious(callback: () => void): () => void {
+  if (isElectron() && (window.electron as ElectronAPIWithTray)?.tray) {
+    return (window.electron as ElectronAPIWithTray).tray.onPrevious(callback);
+  }
+  return () => {};
+}
+
+// Extended Electron API type with tray
+interface ElectronAPIWithTray extends ElectronAPI {
+  tray: {
+    updatePlaybackState: (state: TrayPlaybackState) => Promise<{ success: boolean }>;
+    show: () => Promise<{ success: boolean }>;
+    hide: () => Promise<{ success: boolean }>;
+    onPlayPause: (callback: () => void) => () => void;
+    onNext: (callback: () => void) => () => void;
+    onPrevious: (callback: () => void) => () => void;
+  };
+}

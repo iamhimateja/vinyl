@@ -35,6 +35,10 @@ import {
   clearStoredData,
   isFirstLaunch,
   completeSetup,
+  updateTrayPlaybackState,
+  onTrayPlayPause,
+  onTrayNext,
+  onTrayPrevious,
 } from "./lib/platform";
 
 import { FirstLaunchWizard } from "./components/FirstLaunchWizard";
@@ -351,6 +355,44 @@ function App() {
     onToggleFavorite: currentSong ? () => toggleFavorite(currentSong.id) : undefined,
     enabled: !showFirstLaunchWizard,
   });
+
+  // System tray integration (Desktop only)
+  // Update tray when playback state changes
+  useEffect(() => {
+    if (!checkIsDesktop()) return;
+    
+    updateTrayPlaybackState({
+      isPlaying,
+      song: currentSong ? {
+        title: currentSong.title,
+        artist: currentSong.artist,
+        album: currentSong.album,
+      } : null,
+    });
+  }, [currentSong, isPlaying]);
+
+  // Listen for tray control events
+  useEffect(() => {
+    if (!checkIsDesktop()) return;
+    
+    const unsubPlayPause = onTrayPlayPause(() => {
+      togglePlayPause();
+    });
+    
+    const unsubNext = onTrayNext(() => {
+      playNext();
+    });
+    
+    const unsubPrevious = onTrayPrevious(() => {
+      playPrevious();
+    });
+    
+    return () => {
+      unsubPlayPause();
+      unsubNext();
+      unsubPrevious();
+    };
+  }, [togglePlayPause, playNext, playPrevious]);
 
   // Get current playlist object
   const currentPlaylist =

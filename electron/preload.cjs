@@ -65,6 +65,36 @@ contextBridge.exposeInMainWorld("electron", {
       return () => ipcRenderer.removeListener("library:fileChange", handler);
     },
   },
+
+  // System Tray APIs
+  tray: {
+    // Update playback state in tray
+    updatePlaybackState: (state) =>
+      ipcRenderer.invoke("tray:updatePlaybackState", state),
+    
+    // Show/hide tray
+    show: () => ipcRenderer.invoke("tray:show"),
+    hide: () => ipcRenderer.invoke("tray:hide"),
+    
+    // Event listeners for tray control actions
+    onPlayPause: (callback) => {
+      const handler = () => callback();
+      ipcRenderer.on("tray:playPause", handler);
+      return () => ipcRenderer.removeListener("tray:playPause", handler);
+    },
+    
+    onNext: (callback) => {
+      const handler = () => callback();
+      ipcRenderer.on("tray:next", handler);
+      return () => ipcRenderer.removeListener("tray:next", handler);
+    },
+    
+    onPrevious: (callback) => {
+      const handler = () => callback();
+      ipcRenderer.on("tray:previous", handler);
+      return () => ipcRenderer.removeListener("tray:previous", handler);
+    },
+  },
 });
 
 // Log when preload is complete
