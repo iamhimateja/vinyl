@@ -7,8 +7,9 @@ import type {
   AppSettings,
 } from "../types";
 import { savePlayerState, getPlayerState } from "../lib/db";
-import { getCachedFile } from "./useSongs";
+import { getCachedFile, setCachedFile } from "./useSongs";
 import { isDesktop, getAssetUrl, fileExists } from "../lib/platform";
+import { extractMetadata, isAudioFile, generateId } from "../lib/audioMetadata";
 
 const defaultPlayerState: PlayerState = {
   currentSongId: null,
@@ -1224,12 +1225,261 @@ export function useAudioPlayer(songs: Song[], settings?: AppSettings) {
     });
   }, []);
 
-  // Get current song
-  const currentSong = songs.find((s) => s.id === playerState.currentSongId);
+  // Track quick-play songs separately (not persisted to library)
+  const quickPlaySongsRef = useRef<Map<string, Song>>(new Map());
+
+  // Play a file directly without adding to library
+  // Returns the temporary song object for display purposes
+  const playFile = useCallback(async (file: File): Promise<Song | null> => {
+    if (!isAudioFile(file)) {
+      console.warn("Not an audio file:", file.name);
+      return null;
+    }
+
+    if (!audioRef.current) return null;
+
+    const audio = audioRef.current;
+
+    // Stop and reset current audio
+    audio.pause();
+    audio.currentTime = 0;
+
+    // Revoke previous blob URL
+    if (objectUrlRef.current) {
+      URL.revokeObjectURL(objectUrlRef.current);
+      objectUrlRef.current = null;
+    }
+
+    setPlaybackState("buffering");
+
+    try {
+      // Extract metadata from file
+      const metadata = await extractMetadata(file);
+      
+      // Create a temporary song object (not saved to DB)
+      const tempSong: Song = {
+        id: `quick-play-${generateId()}`,
+        title: metadata.title || file.name.replace(/\.[^/.]+$/, ""),
+        artist: metadata.artist || "Unknown Artist",
+        album: metadata.album || "Unknown Album",
+        duration: metadata.duration || 0,
+        coverArt: metadata.coverArt,
+        sourceType: "local",
+        addedAt: Date.now(),
+        fileName: file.name,
+        fileSize: file.size,
+      };
+
+      // Cache the file for playback
+      setCachedFile(tempSong.id, file);
+      quickPlaySongsRef.current.set(tempSong.id, tempSong);
+
+      // Create blob URL for playback
+      const audioUrl = URL.createObjectURL(file);
+      objectUrlRef.current = audioUrl;
+
+      // Set up player state - single song queue
+      setPlayerState((prev) => ({
+        ...prev,
+        currentSongId: tempSong.id,
+        isPlaying: true,
+        queue: [tempSong.id],
+        queueIndex: 0,
+        currentPlaylistId: null, // Not part of any playlist
+      }));
+
+      hasRestoredSong.current = true;
+
+      // Small delay to let the audio element reset
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      audio.src = audioUrl;
+      audio.playbackRate = playerState.speed;
+
+      // Setup Media Session
+      if ("mediaSession" in navigator) {
+        try {
+          navigator.mediaSession.metadata = new MediaMetadata({
+            title: tempSong.title,
+            artist: tempSong.artist,
+            album: tempSong.album,
+          });
+        } catch {
+          // Ignore Media Session errors
+        }
+      }
+
+      // Wait for canplay event
+      await new Promise<void>((resolve, reject) => {
+        const onCanPlay = () => {
+          audio.removeEventListener("canplay", onCanPlay);
+          audio.removeEventListener("error", onError);
+          resolve();
+        };
+        const onError = () => {
+          audio.removeEventListener("canplay", onCanPlay);
+          audio.removeEventListener("error", onError);
+          reject(new Error("Audio load error"));
+        };
+        audio.addEventListener("canplay", onCanPlay);
+        audio.addEventListener("error", onError);
+
+        setTimeout(() => {
+          audio.removeEventListener("canplay", onCanPlay);
+          audio.removeEventListener("error", onError);
+          resolve();
+        }, 10000);
+      });
+
+      await audio.play();
+      setPlaybackState("playing");
+
+      return tempSong;
+    } catch (error) {
+      console.error("Quick play failed:", error);
+      setPlaybackState("idle");
+      setPlayerState((prev) => ({ ...prev, isPlaying: false }));
+      return null;
+    }
+  }, [playerState.speed]);
+
+  // Play multiple files directly without adding to library
+  // Creates a temporary queue from the files
+  const playFiles = useCallback(async (files: File[]): Promise<Song[]> => {
+    const audioFiles = files.filter(isAudioFile);
+    if (audioFiles.length === 0) return [];
+
+    if (!audioRef.current) return [];
+
+    const audio = audioRef.current;
+
+    // Stop and reset current audio
+    audio.pause();
+    audio.currentTime = 0;
+
+    // Revoke previous blob URL
+    if (objectUrlRef.current) {
+      URL.revokeObjectURL(objectUrlRef.current);
+      objectUrlRef.current = null;
+    }
+
+    setPlaybackState("buffering");
+
+    try {
+      // Process all files and create temporary songs
+      const tempSongs: Song[] = [];
+      
+      for (const file of audioFiles) {
+        // Extract metadata (for first file do full extraction, others quick)
+        const metadata = await extractMetadata(file);
+        
+        const tempSong: Song = {
+          id: `quick-play-${generateId()}`,
+          title: metadata.title || file.name.replace(/\.[^/.]+$/, ""),
+          artist: metadata.artist || "Unknown Artist",
+          album: metadata.album || "Unknown Album",
+          duration: metadata.duration || 0,
+          coverArt: metadata.coverArt,
+          sourceType: "local",
+          addedAt: Date.now(),
+          fileName: file.name,
+          fileSize: file.size,
+        };
+
+        // Cache the file for playback
+        setCachedFile(tempSong.id, file);
+        quickPlaySongsRef.current.set(tempSong.id, tempSong);
+        tempSongs.push(tempSong);
+      }
+
+      if (tempSongs.length === 0) return [];
+
+      const firstSong = tempSongs[0];
+
+      // Create blob URL for first file
+      const audioUrl = URL.createObjectURL(audioFiles[0]);
+      objectUrlRef.current = audioUrl;
+
+      // Set up player state with all songs in queue
+      setPlayerState((prev) => ({
+        ...prev,
+        currentSongId: firstSong.id,
+        isPlaying: true,
+        queue: tempSongs.map(s => s.id),
+        queueIndex: 0,
+        currentPlaylistId: null,
+      }));
+
+      hasRestoredSong.current = true;
+
+      // Small delay to let the audio element reset
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      audio.src = audioUrl;
+      audio.playbackRate = playerState.speed;
+
+      // Setup Media Session
+      if ("mediaSession" in navigator) {
+        try {
+          navigator.mediaSession.metadata = new MediaMetadata({
+            title: firstSong.title,
+            artist: firstSong.artist,
+            album: firstSong.album,
+          });
+        } catch {
+          // Ignore Media Session errors
+        }
+      }
+
+      // Wait for canplay event
+      await new Promise<void>((resolve, reject) => {
+        const onCanPlay = () => {
+          audio.removeEventListener("canplay", onCanPlay);
+          audio.removeEventListener("error", onError);
+          resolve();
+        };
+        const onError = () => {
+          audio.removeEventListener("canplay", onCanPlay);
+          audio.removeEventListener("error", onError);
+          reject(new Error("Audio load error"));
+        };
+        audio.addEventListener("canplay", onCanPlay);
+        audio.addEventListener("error", onError);
+
+        setTimeout(() => {
+          audio.removeEventListener("canplay", onCanPlay);
+          audio.removeEventListener("error", onError);
+          resolve();
+        }, 10000);
+      });
+
+      await audio.play();
+      setPlaybackState("playing");
+
+      return tempSongs;
+    } catch (error) {
+      console.error("Quick play files failed:", error);
+      setPlaybackState("idle");
+      setPlayerState((prev) => ({ ...prev, isPlaying: false }));
+      return [];
+    }
+  }, [playerState.speed]);
+
+  // Get current song - check quick play songs first, then library songs
+  const currentSong = playerState.currentSongId
+    ? (quickPlaySongsRef.current.get(playerState.currentSongId) || 
+       songs.find((s) => s.id === playerState.currentSongId))
+    : undefined;
 
   // Get queue songs (actual Song objects from queue IDs)
+  // Include quick play songs if they're in the queue
   const queueSongs = playerState.queue
-    .map((id) => songs.find((s) => s.id === id))
+    .map((id) => {
+      // Check quick play songs first
+      const quickPlaySong = quickPlaySongsRef.current.get(id);
+      if (quickPlaySong) return quickPlaySong;
+      return songs.find((s) => s.id === id);
+    })
     .filter((s): s is Song => s !== undefined);
 
   return {
@@ -1250,6 +1500,8 @@ export function useAudioPlayer(songs: Song[], settings?: AppSettings) {
     playSong,
     playFromQueue,
     playPlaylist,
+    playFile,
+    playFiles,
     togglePlayPause,
     stop,
     playNext,

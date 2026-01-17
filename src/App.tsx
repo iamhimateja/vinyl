@@ -17,6 +17,7 @@ import { SettingsView } from "./components/SettingsView";
 import { PlayerOverlay } from "./components/PlayerOverlay";
 import { TopNav } from "./components/TopNav";
 import { MusicGeneratorView } from "./components/MusicGeneratorView";
+import { QuickPlayOverlay, DropZoneOverlay } from "./components/QuickPlayOverlay";
 import { useSongs, checkSongsAvailability } from "./hooks/useSongs";
 import { usePlaylists } from "./hooks/usePlaylists";
 import { useAudioPlayer } from "./hooks/useAudioPlayer";
@@ -34,6 +35,7 @@ import {
   isFirstLaunch,
   completeSetup,
 } from "./lib/platform";
+
 import { FirstLaunchWizard } from "./components/FirstLaunchWizard";
 import type { Playlist, Song } from "./types";
 import {
@@ -184,6 +186,12 @@ function App() {
   const [showFirstLaunchWizard, setShowFirstLaunchWizard] = useState(false);
   const [checkingFirstLaunch, setCheckingFirstLaunch] = useState(true);
 
+  // Quick play state for drag-and-drop files
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
+  const [droppedFiles, setDroppedFiles] = useState<File[]>([]);
+  const [showQuickPlayOverlay, setShowQuickPlayOverlay] = useState(false);
+  const dragCounterRef = useRef(0);
+
   const { settings, updateSetting, resetSettings } = useSettings();
   const {
     canInstall,
@@ -259,6 +267,8 @@ function App() {
     playSong,
     playFromQueue,
     playPlaylist,
+    playFile,
+    playFiles,
     togglePlayPause,
     stop,
     playNext,
@@ -609,6 +619,84 @@ function App() {
     [updateSetting],
   );
 
+  // Global drag and drop handlers for quick play
+  const handleGlobalDragEnter = useCallback((e: DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current++;
+    
+    // Check if dragging files
+    if (e.dataTransfer?.types.includes("Files")) {
+      setIsDraggingFile(true);
+    }
+  }, []);
+
+  const handleGlobalDragLeave = useCallback((e: DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current--;
+    
+    if (dragCounterRef.current === 0) {
+      setIsDraggingFile(false);
+    }
+  }, []);
+
+  const handleGlobalDragOver = useCallback((e: DragEvent) => {
+    e.preventDefault();
+  }, []);
+
+  const handleGlobalDrop = useCallback((e: DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current = 0;
+    setIsDraggingFile(false);
+    
+    const files = e.dataTransfer?.files;
+    if (files && files.length > 0) {
+      // Get all files (we'll filter audio files in the overlay)
+      setDroppedFiles(Array.from(files));
+      setShowQuickPlayOverlay(true);
+    }
+  }, []);
+
+  // Set up global drag and drop listeners
+  useEffect(() => {
+    document.addEventListener("dragenter", handleGlobalDragEnter);
+    document.addEventListener("dragleave", handleGlobalDragLeave);
+    document.addEventListener("dragover", handleGlobalDragOver);
+    document.addEventListener("drop", handleGlobalDrop);
+
+    return () => {
+      document.removeEventListener("dragenter", handleGlobalDragEnter);
+      document.removeEventListener("dragleave", handleGlobalDragLeave);
+      document.removeEventListener("dragover", handleGlobalDragOver);
+      document.removeEventListener("drop", handleGlobalDrop);
+    };
+  }, [handleGlobalDragEnter, handleGlobalDragLeave, handleGlobalDragOver, handleGlobalDrop]);
+
+  // Handle quick play - play files directly without adding to library
+  const handleQuickPlayFiles = useCallback(async (files: File[]) => {
+    if (files.length === 0) return;
+    if (files.length === 1) {
+      // Single file - use simpler playFile
+      await playFile(files[0]);
+    } else {
+      // Multiple files - use playFiles to create a temporary queue
+      await playFiles(files);
+    }
+  }, [playFile, playFiles]);
+
+  // Handle import and play - add to library and play
+  const handleImportAndPlayFiles = useCallback(async (files: File[]) => {
+    const result = await importFiles(files);
+    if (result.songs.length > 0) {
+      playSong(result.songs[0], null);
+    }
+  }, [importFiles, playSong]);
+
+  // Dismiss quick play overlay
+  const handleDismissQuickPlay = useCallback(() => {
+    setShowQuickPlayOverlay(false);
+    setDroppedFiles([]);
+  }, []);
+
   const handleSelectPlaylist = (playlist: Playlist) => {
     navigate(`/playlists/${playlist.id}`);
   };
@@ -699,8 +787,11 @@ function App() {
             <h2 className="text-xl font-semibold text-vinyl-text mb-2">
               Your library is empty
             </h2>
-            <p className="text-vinyl-text-muted mb-6">
+            <p className="text-vinyl-text-muted mb-4">
               Add some music to get started
+            </p>
+            <p className="text-vinyl-text-muted text-sm">
+              You can also <span className="text-vinyl-accent">drag and drop</span> audio files anywhere to play them instantly
             </p>
           </div>
         ) : (
@@ -1083,6 +1174,18 @@ function App() {
           </div>
         </div>
       )}
+
+      {/* Drop zone overlay - shown when dragging files */}
+      <DropZoneOverlay isVisible={isDraggingFile} />
+
+      {/* Quick play overlay - shown when file is dropped */}
+      <QuickPlayOverlay
+        isVisible={showQuickPlayOverlay}
+        droppedFiles={droppedFiles}
+        onPlayFiles={handleQuickPlayFiles}
+        onImportAndPlay={handleImportAndPlayFiles}
+        onDismiss={handleDismissQuickPlay}
+      />
     </div>
   );
 }
