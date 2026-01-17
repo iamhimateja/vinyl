@@ -4,6 +4,14 @@ export interface SleepTimerState {
   isActive: boolean;
   remainingTime: number; // in seconds
   totalTime: number; // in seconds
+  isFadingOut: boolean;
+}
+
+export interface SleepTimerOptions {
+  onTimerEnd: () => void;
+  onVolumeChange?: (volume: number) => void;
+  getCurrentVolume?: () => number;
+  fadeOutDuration?: number; // in seconds, default 30
 }
 
 export const SLEEP_TIMER_PRESETS = [
@@ -15,22 +23,56 @@ export const SLEEP_TIMER_PRESETS = [
   { label: "2 hours", value: 120 * 60 },
 ];
 
-export function useSleepTimer(onTimerEnd: () => void) {
+// Default fade-out duration in seconds
+const DEFAULT_FADE_DURATION = 30;
+
+export function useSleepTimer(
+  onTimerEndOrOptions: (() => void) | SleepTimerOptions
+) {
+  // Parse options - support both old API (just callback) and new API (options object)
+  const options: SleepTimerOptions = typeof onTimerEndOrOptions === 'function'
+    ? { onTimerEnd: onTimerEndOrOptions }
+    : onTimerEndOrOptions;
+
+  const {
+    onTimerEnd,
+    onVolumeChange,
+    getCurrentVolume,
+    fadeOutDuration = DEFAULT_FADE_DURATION,
+  } = options;
+
   const [state, setState] = useState<SleepTimerState>({
     isActive: false,
     remainingTime: 0,
     totalTime: 0,
+    isFadingOut: false,
   });
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const onTimerEndRef = useRef(onTimerEnd);
+  const onVolumeChangeRef = useRef(onVolumeChange);
+  const getCurrentVolumeRef = useRef(getCurrentVolume);
+  const originalVolumeRef = useRef<number | null>(null);
+  const fadeOutDurationRef = useRef(fadeOutDuration);
 
-  // Keep callback ref updated
+  // Keep callback refs updated
   useEffect(() => {
     onTimerEndRef.current = onTimerEnd;
   }, [onTimerEnd]);
 
-  // Timer countdown logic
+  useEffect(() => {
+    onVolumeChangeRef.current = onVolumeChange;
+  }, [onVolumeChange]);
+
+  useEffect(() => {
+    getCurrentVolumeRef.current = getCurrentVolume;
+  }, [getCurrentVolume]);
+
+  useEffect(() => {
+    fadeOutDurationRef.current = fadeOutDuration;
+  }, [fadeOutDuration]);
+
+  // Timer countdown logic with fade-out support
   useEffect(() => {
     if (!state.isActive || state.remainingTime <= 0) {
       if (intervalRef.current) {
@@ -43,20 +85,45 @@ export function useSleepTimer(onTimerEnd: () => void) {
     intervalRef.current = setInterval(() => {
       setState((prev) => {
         const newRemaining = prev.remainingTime - 1;
+        const fadeDuration = fadeOutDurationRef.current;
+        const shouldFade = onVolumeChangeRef.current !== undefined;
+
+        // Check if we should start fading
+        const isFadingOut = shouldFade && newRemaining <= fadeDuration && newRemaining > 0;
+
+        // Handle fade-out volume adjustment
+        if (isFadingOut && onVolumeChangeRef.current) {
+          // Store original volume when fade starts
+          if (!prev.isFadingOut && getCurrentVolumeRef.current) {
+            originalVolumeRef.current = getCurrentVolumeRef.current();
+          }
+
+          // Calculate faded volume (linear fade)
+          const originalVolume = originalVolumeRef.current ?? 1;
+          const fadeProgress = newRemaining / fadeDuration; // 1 -> 0
+          const fadedVolume = originalVolume * fadeProgress;
+          onVolumeChangeRef.current(Math.max(0, fadedVolume));
+        }
 
         if (newRemaining <= 0) {
-          // Timer ended
+          // Timer ended - set volume to 0 and stop
+          if (onVolumeChangeRef.current) {
+            onVolumeChangeRef.current(0);
+          }
           onTimerEndRef.current();
+          originalVolumeRef.current = null;
           return {
             isActive: false,
             remainingTime: 0,
             totalTime: 0,
+            isFadingOut: false,
           };
         }
 
         return {
           ...prev,
           remainingTime: newRemaining,
+          isFadingOut,
         };
       });
     }, 1000);
@@ -70,29 +137,53 @@ export function useSleepTimer(onTimerEnd: () => void) {
 
   // Start timer
   const startTimer = useCallback((durationSeconds: number) => {
+    // Store original volume when starting timer
+    if (getCurrentVolumeRef.current) {
+      originalVolumeRef.current = getCurrentVolumeRef.current();
+    }
+    
     setState({
       isActive: true,
       remainingTime: durationSeconds,
       totalTime: durationSeconds,
+      isFadingOut: false,
     });
   }, []);
 
-  // Stop/cancel timer
+  // Stop/cancel timer and restore volume
   const stopTimer = useCallback(() => {
+    // Restore original volume if we were fading
+    if (originalVolumeRef.current !== null && onVolumeChangeRef.current) {
+      onVolumeChangeRef.current(originalVolumeRef.current);
+    }
+    originalVolumeRef.current = null;
+    
     setState({
       isActive: false,
       remainingTime: 0,
       totalTime: 0,
+      isFadingOut: false,
     });
   }, []);
 
   // Add time to existing timer
   const addTime = useCallback((seconds: number) => {
-    setState((prev) => ({
-      ...prev,
-      remainingTime: prev.remainingTime + seconds,
-      totalTime: prev.totalTime + seconds,
-    }));
+    setState((prev) => {
+      const newRemaining = prev.remainingTime + seconds;
+      const fadeDuration = fadeOutDurationRef.current;
+      
+      // If adding time takes us out of the fade zone, restore volume
+      if (prev.isFadingOut && newRemaining > fadeDuration && originalVolumeRef.current !== null && onVolumeChangeRef.current) {
+        onVolumeChangeRef.current(originalVolumeRef.current);
+      }
+      
+      return {
+        ...prev,
+        remainingTime: newRemaining,
+        totalTime: prev.totalTime + seconds,
+        isFadingOut: newRemaining <= fadeDuration,
+      };
+    });
   }, []);
 
   // Format remaining time for display

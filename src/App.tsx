@@ -300,8 +300,13 @@ function App() {
     toggleEnabled: toggleEqualizer,
   } = useEqualizer(audioElement);
 
-  // Sleep timer - stops playback when timer ends
-  const sleepTimer = useSleepTimer(stop);
+  // Sleep timer - stops playback with fade-out effect when timer ends
+  const sleepTimer = useSleepTimer({
+    onTimerEnd: stop,
+    onVolumeChange: setVolume,
+    getCurrentVolume: () => volume,
+    fadeOutDuration: 30, // 30 second fade-out
+  });
 
   // Audio visualizer - only active when visualizer is enabled
   const { frequencyData, waveformData } = useAudioVisualizer(
