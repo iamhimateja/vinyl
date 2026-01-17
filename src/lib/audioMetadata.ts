@@ -142,36 +142,66 @@ export async function extractMetadata(file: File): Promise<Partial<Song>> {
   }
 }
 
+// Supported audio MIME types
+export const SUPPORTED_AUDIO_TYPES = [
+  // MP3
+  "audio/mpeg",
+  "audio/mp3",
+  // WAV
+  "audio/wav",
+  "audio/wave",
+  "audio/x-wav",
+  // OGG
+  "audio/ogg",
+  "audio/vorbis",
+  // FLAC
+  "audio/flac",
+  "audio/x-flac",
+  // AAC / M4A
+  "audio/aac",
+  "audio/mp4",
+  "audio/x-m4a",
+  "audio/m4a",
+  // WebM
+  "audio/webm",
+  // Opus
+  "audio/opus",
+  // AIFF
+  "audio/aiff",
+  "audio/x-aiff",
+  // WMA
+  "audio/x-ms-wma",
+  // APE (Monkey's Audio)
+  "audio/ape",
+  "audio/x-ape",
+];
+
+// Supported audio file extensions
+export const SUPPORTED_AUDIO_EXTENSIONS = [
+  ".mp3",
+  ".wav",
+  ".ogg",
+  ".flac",
+  ".aac",
+  ".m4a",
+  ".webm",
+  ".opus",
+  ".aiff",
+  ".aif",
+  ".wma",
+  ".ape",
+];
+
 // Check if file is a supported audio format
 export function isAudioFile(file: File): boolean {
-  const audioTypes = [
-    "audio/mpeg",
-    "audio/mp3",
-    "audio/wav",
-    "audio/ogg",
-    "audio/flac",
-    "audio/aac",
-    "audio/m4a",
-    "audio/webm",
-    "audio/x-m4a",
-  ];
-
-  const audioExtensions = [
-    ".mp3",
-    ".wav",
-    ".ogg",
-    ".flac",
-    ".aac",
-    ".m4a",
-    ".webm",
-  ];
-
-  if (audioTypes.includes(file.type)) {
+  // Check by MIME type first
+  if (file.type && SUPPORTED_AUDIO_TYPES.includes(file.type.toLowerCase())) {
     return true;
   }
 
+  // Fallback to extension check (some browsers don't set correct MIME types)
   const ext = file.name.toLowerCase().slice(file.name.lastIndexOf("."));
-  return audioExtensions.includes(ext);
+  return SUPPORTED_AUDIO_EXTENSIONS.includes(ext);
 }
 
 // Format duration in mm:ss

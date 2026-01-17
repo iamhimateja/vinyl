@@ -3,25 +3,32 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QuickPlayOverlay, DropZoneOverlay } from './QuickPlayOverlay';
 
 // Mock the audioMetadata module
-vi.mock('../lib/audioMetadata', () => ({
-  isAudioFile: (file: File) => {
-    const audioExtensions = ['.mp3', '.wav', '.ogg', '.flac', '.aac', '.m4a'];
-    const ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
-    return audioExtensions.includes(ext);
-  },
-  extractMetadata: vi.fn().mockResolvedValue({
-    title: 'Test Song',
-    artist: 'Test Artist',
-    album: 'Test Album',
-    duration: 180,
-    coverArt: undefined,
-  }),
-  formatDuration: (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  },
-}));
+vi.mock('../lib/audioMetadata', () => {
+  const supportedExtensions = [
+    '.mp3', '.wav', '.ogg', '.flac', '.aac', '.m4a', 
+    '.webm', '.opus', '.aiff', '.aif', '.wma', '.ape'
+  ];
+  
+  return {
+    isAudioFile: (file: File) => {
+      const ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
+      return supportedExtensions.includes(ext);
+    },
+    extractMetadata: vi.fn().mockResolvedValue({
+      title: 'Test Song',
+      artist: 'Test Artist',
+      album: 'Test Album',
+      duration: 180,
+      coverArt: undefined,
+    }),
+    formatDuration: (seconds: number) => {
+      const mins = Math.floor(seconds / 60);
+      const secs = Math.floor(seconds % 60);
+      return `${mins}:${secs.toString().padStart(2, '0')}`;
+    },
+    SUPPORTED_AUDIO_EXTENSIONS: supportedExtensions,
+  };
+});
 
 describe('DropZoneOverlay', () => {
   it('renders nothing when not visible', () => {
@@ -322,6 +329,36 @@ describe('QuickPlayOverlay', () => {
 
     // Should show single file dialog since only one audio file
     expect(screen.getByText('Play Audio File')).toBeInTheDocument();
+  });
+
+  describe('audio format support', () => {
+    it.each([
+      ['song.m4a', 'M4A'],
+      ['song.aac', 'AAC'],
+      ['song.flac', 'FLAC'],
+      ['song.wav', 'WAV'],
+      ['song.ogg', 'OGG'],
+      ['song.opus', 'Opus'],
+      ['song.webm', 'WebM'],
+      ['song.aiff', 'AIFF'],
+      ['song.aif', 'AIF'],
+      ['song.wma', 'WMA'],
+      ['song.ape', 'APE'],
+    ])('recognizes %s as audio file (%s format)', (filename) => {
+      const audioFile = new File(['audio content'], filename, { type: '' });
+      render(
+        <QuickPlayOverlay
+          isVisible={true}
+          droppedFiles={[audioFile]}
+          onPlayFiles={mockOnPlayFiles}
+          onImportAndPlay={mockOnImportAndPlay}
+          onDismiss={mockOnDismiss}
+        />
+      );
+
+      // Should show the audio file dialog, not unsupported
+      expect(screen.getByText('Play Audio File')).toBeInTheDocument();
+    });
   });
 
   it('displays info text about quick play', async () => {

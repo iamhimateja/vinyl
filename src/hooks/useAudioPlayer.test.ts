@@ -20,21 +20,28 @@ vi.mock('../lib/platform', () => ({
   fileExists: vi.fn().mockResolvedValue(false),
 }));
 
-vi.mock('../lib/audioMetadata', () => ({
-  extractMetadata: vi.fn().mockResolvedValue({
-    title: 'Quick Play Song',
-    artist: 'Quick Play Artist',
-    album: 'Quick Play Album',
-    duration: 200,
-    coverArt: undefined,
-  }),
-  isAudioFile: (file: File) => {
-    const audioExtensions = ['.mp3', '.wav', '.ogg', '.flac', '.aac', '.m4a'];
-    const ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
-    return audioExtensions.includes(ext);
-  },
-  generateId: () => `test-id-${Date.now()}`,
-}));
+vi.mock('../lib/audioMetadata', () => {
+  const supportedExtensions = [
+    '.mp3', '.wav', '.ogg', '.flac', '.aac', '.m4a', 
+    '.webm', '.opus', '.aiff', '.aif', '.wma', '.ape'
+  ];
+  
+  return {
+    extractMetadata: vi.fn().mockResolvedValue({
+      title: 'Quick Play Song',
+      artist: 'Quick Play Artist',
+      album: 'Quick Play Album',
+      duration: 200,
+      coverArt: undefined,
+    }),
+    isAudioFile: (file: File) => {
+      const ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
+      return supportedExtensions.includes(ext);
+    },
+    generateId: () => `test-id-${Date.now()}`,
+    SUPPORTED_AUDIO_EXTENSIONS: supportedExtensions,
+  };
+});
 
 // Create a mock Audio class
 class MockAudio {
@@ -156,6 +163,31 @@ describe('useAudioPlayer', () => {
       expect(playResult).not.toBeNull();
       expect(playResult?.title).toBe('Quick Play Song');
       expect(playResult?.artist).toBe('Quick Play Artist');
+      expect(playResult?.id).toMatch(/^quick-play-/);
+    });
+
+    // Test various audio formats
+    it.each([
+      ['song.m4a', 'audio/mp4', 'M4A'],
+      ['song.aac', 'audio/aac', 'AAC'],
+      ['song.flac', 'audio/flac', 'FLAC'],
+      ['song.wav', 'audio/wav', 'WAV'],
+      ['song.ogg', 'audio/ogg', 'OGG'],
+      ['song.opus', 'audio/opus', 'Opus'],
+      ['song.webm', 'audio/webm', 'WebM'],
+      ['song.aiff', 'audio/aiff', 'AIFF'],
+      ['song.wma', 'audio/x-ms-wma', 'WMA'],
+      ['song.ape', 'audio/ape', 'APE'],
+    ])('plays %s files (%s format)', async (filename, mimeType) => {
+      const { result } = renderHook(() => useAudioPlayer(mockSongs));
+      const audioFile = new File(['audio content'], filename, { type: mimeType });
+
+      let playResult: Song | null = null;
+      await act(async () => {
+        playResult = await result.current.playFile(audioFile);
+      });
+
+      expect(playResult).not.toBeNull();
       expect(playResult?.id).toMatch(/^quick-play-/);
     });
 
