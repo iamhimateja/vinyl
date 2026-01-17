@@ -17,28 +17,32 @@ import {
   readFileData,
 } from "../lib/platform";
 
-// Check if two songs are duplicates based on title, artist, and duration
-function isDuplicateSong(
-  newSong: Partial<Song>,
-  existingSong: Song,
-  durationTolerance: number = 2, // seconds tolerance for duration matching
-): boolean {
-  // Normalize strings for comparison
-  const normalize = (str: string | undefined): string =>
-    (str || "").toLowerCase().trim();
+// Concurrency limit for batch imports
+const IMPORT_CONCURRENCY = 5;
 
-  const titleMatch = normalize(newSong.title) === normalize(existingSong.title);
-  const artistMatch =
-    normalize(newSong.artist) === normalize(existingSong.artist);
+// Normalize string for duplicate checking
+const normalize = (str: string | undefined): string =>
+  (str || "").toLowerCase().trim();
 
-  // Duration match with tolerance (handles slight variations in encoding)
-  const newDuration = newSong.duration || 0;
-  const existingDuration = existingSong.duration || 0;
-  const durationMatch =
-    Math.abs(newDuration - existingDuration) <= durationTolerance;
+// Generate a lookup key for duplicate detection
+function getSongLookupKey(title: string | undefined, artist: string | undefined, duration: number): string {
+  // Round duration to nearest 2 seconds for tolerance
+  const roundedDuration = Math.round((duration || 0) / 2) * 2;
+  return `${normalize(title)}|${normalize(artist)}|${roundedDuration}`;
+}
 
-  // Consider duplicate if title + artist match AND duration is close
-  return titleMatch && artistMatch && durationMatch;
+// Build a lookup Map for O(1) duplicate checking
+function buildSongLookupMap(songs: Song[]): Map<string, Song> {
+  const map = new Map<string, Song>();
+  for (const song of songs) {
+    const key = getSongLookupKey(song.title, song.artist, song.duration);
+    map.set(key, song);
+    // Also add by filePath for quick path-based lookups
+    if (song.filePath) {
+      map.set(`path:${song.filePath}`, song);
+    }
+  }
+  return map;
 }
 
 // In-memory file cache for current session playback
@@ -136,15 +140,19 @@ export function useSongs() {
 
   // Use ref to track songs during import to avoid stale state
   const songsRef = useRef<Song[]>([]);
+  
+  // Lookup map for O(1) duplicate checking
+  const songLookupMapRef = useRef<Map<string, Song>>(new Map());
 
   // Load songs on mount
   useEffect(() => {
     loadSongs();
   }, []);
 
-  // Keep ref in sync with state
+  // Keep ref and lookup map in sync with state
   useEffect(() => {
     songsRef.current = songs;
+    songLookupMapRef.current = buildSongLookupMap(songs);
   }, [songs]);
 
   const loadSongs = async () => {
@@ -153,6 +161,7 @@ export function useSongs() {
       const sortedSongs = allSongs.reverse(); // Most recent first
       setSongs(sortedSongs);
       songsRef.current = sortedSongs;
+      songLookupMapRef.current = buildSongLookupMap(sortedSongs);
     } catch (error) {
       console.error("Failed to load songs:", error);
     } finally {
@@ -160,15 +169,15 @@ export function useSongs() {
     }
   };
 
-  // Check if a song already exists in the library
+  // Check if a song already exists in the library - O(1) lookup
   const checkDuplicate = useCallback((metadata: Partial<Song>): Song | null => {
-    const existingSongs = songsRef.current;
-    for (const existingSong of existingSongs) {
-      if (isDuplicateSong(metadata, existingSong)) {
-        return existingSong;
-      }
-    }
-    return null;
+    const key = getSongLookupKey(metadata.title, metadata.artist, metadata.duration || 0);
+    return songLookupMapRef.current.get(key) || null;
+  }, []);
+  
+  // Check if a song exists by file path - O(1) lookup
+  const checkDuplicateByPath = useCallback((filePath: string): Song | null => {
+    return songLookupMapRef.current.get(`path:${filePath}`) || null;
   }, []);
 
   // Import single file
@@ -232,7 +241,7 @@ export function useSongs() {
     [checkDuplicate],
   );
 
-  // Import multiple files - returns both imported songs and counts
+  // Import multiple files with concurrency control
   // Stores metadata in IndexedDB, keeps files in memory for playback
   const importFiles = useCallback(
     async (
@@ -248,17 +257,30 @@ export function useSongs() {
       setImportProgress({ current: 0, total: audioFiles.length, skipped: 0 });
       const importedSongs: Song[] = [];
       let skippedCount = 0;
+      let processedCount = 0;
 
-      for (let i = 0; i < audioFiles.length; i++) {
-        const result = await importFile(audioFiles[i]);
-        if (result.song) {
-          importedSongs.push(result.song);
+      // Process files in batches with concurrency control
+      for (let i = 0; i < audioFiles.length; i += IMPORT_CONCURRENCY) {
+        const batch = audioFiles.slice(i, i + IMPORT_CONCURRENCY);
+        
+        // Process batch concurrently
+        const results = await Promise.all(
+          batch.map(file => importFile(file))
+        );
+        
+        // Collect results
+        for (const result of results) {
+          processedCount++;
+          if (result.song) {
+            importedSongs.push(result.song);
+          }
+          if (result.skipped) {
+            skippedCount++;
+          }
         }
-        if (result.skipped) {
-          skippedCount++;
-        }
+        
         setImportProgress({
-          current: i + 1,
+          current: processedCount,
           total: audioFiles.length,
           skipped: skippedCount,
         });
@@ -355,10 +377,8 @@ export function useSongs() {
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
 
-        // Check if already exists by path
-        const existingByPath = songsRef.current.find(
-          (s) => s.filePath === file.path,
-        );
+        // Check if already exists by path - O(1) lookup
+        const existingByPath = checkDuplicateByPath(file.path);
         if (existingByPath) {
           // Track folder for existing songs (use root folder name if no subfolder)
           const folderKey = file.folder || rootFolderName;
@@ -378,15 +398,12 @@ export function useSongs() {
 
           const metadata = await extractMetadata(fileObj);
 
-          // Check for duplicates by title/artist/duration
-          const duplicate = songsRef.current.find(
-            (s) =>
-              s.title?.toLowerCase() ===
-                (metadata.title || file.name)?.toLowerCase() &&
-              s.artist?.toLowerCase() ===
-                (metadata.artist || "Unknown Artist")?.toLowerCase() &&
-              Math.abs((s.duration || 0) - (metadata.duration || 0)) <= 2,
-          );
+          // Check for duplicates by title/artist/duration - O(1) lookup
+          const duplicate = checkDuplicate({
+            title: metadata.title || file.name,
+            artist: metadata.artist || "Unknown Artist",
+            duration: metadata.duration || 0,
+          });
 
           if (duplicate) {
             // Update existing song with file path if it doesn't have one
@@ -534,10 +551,8 @@ export function useSongs() {
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
 
-        // Check if already exists by path
-        const existingByPath = songsRef.current.find(
-          (s) => s.filePath === file.path,
-        );
+        // Check if already exists by path - O(1) lookup
+        const existingByPath = checkDuplicateByPath(file.path);
         if (existingByPath) {
           skipped++;
           setImportProgress({ current: i + 1, total: files.length, skipped });
@@ -552,15 +567,12 @@ export function useSongs() {
 
           const metadata = await extractMetadata(fileObj);
 
-          // Check for duplicates by title/artist/duration
-          const duplicate = songsRef.current.find(
-            (s) =>
-              s.title?.toLowerCase() ===
-                (metadata.title || file.name)?.toLowerCase() &&
-              s.artist?.toLowerCase() ===
-                (metadata.artist || "Unknown Artist")?.toLowerCase() &&
-              Math.abs((s.duration || 0) - (metadata.duration || 0)) <= 2,
-          );
+          // Check for duplicates by title/artist/duration - O(1) lookup
+          const duplicate = checkDuplicate({
+            title: metadata.title || file.name,
+            artist: metadata.artist || "Unknown Artist",
+            duration: metadata.duration || 0,
+          });
 
           if (duplicate) {
             // Update existing song with file path if it doesn't have one

@@ -172,17 +172,6 @@ html.electron [contenteditable="true"] {
   }
 }
 
-@keyframes slide-up {
-  from {
-    transform: translateY(100%);
-    opacity: 0.8;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
-}
-
 @keyframes slideUp {
   from {
     transform: translateY(100%);

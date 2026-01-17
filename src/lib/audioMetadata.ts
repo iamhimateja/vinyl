@@ -1,13 +1,28 @@
-import * as musicMetadata from "music-metadata";
 import type { Song } from "../types";
+
+// Lazy-loaded music-metadata module (saves ~106KB on initial load)
+let musicMetadataModule: typeof import("music-metadata") | null = null;
+
+async function getMusicMetadata() {
+  if (!musicMetadataModule) {
+    musicMetadataModule = await import("music-metadata");
+  }
+  return musicMetadataModule;
+}
 
 // Generate a unique ID
 export function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 }
 
+// Type for picture data (compatible with music-metadata IPicture)
+interface PictureData {
+  data: Uint8Array;
+  format?: string;
+}
+
 // Convert picture data to base64 data URL
-function pictureToDataUrl(picture: musicMetadata.IPicture): string {
+function pictureToDataUrl(picture: PictureData): string {
   const base64 = arrayBufferToBase64(picture.data);
   const mimeType = picture.format || "image/jpeg";
   return `data:${mimeType};base64,${base64}`;
@@ -44,9 +59,12 @@ async function getAudioDuration(file: File): Promise<number> {
   });
 }
 
-// Extract metadata from audio file using music-metadata
+// Extract metadata from audio file using music-metadata (lazy loaded)
 export async function extractMetadata(file: File): Promise<Partial<Song>> {
   try {
+    // Lazy load music-metadata module
+    const musicMetadata = await getMusicMetadata();
+    
     // Parse metadata using music-metadata
     const metadata = await musicMetadata.parseBlob(file);
 

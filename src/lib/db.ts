@@ -76,6 +76,19 @@ export async function addSong(song: Song): Promise<void> {
   await db.put("songs", song);
 }
 
+// Batch add multiple songs in a single transaction (more efficient for imports)
+export async function addSongs(songs: Song[]): Promise<void> {
+  if (songs.length === 0) return;
+  
+  const db = await getDB();
+  const tx = db.transaction("songs", "readwrite");
+  
+  await Promise.all([
+    ...songs.map(song => tx.store.put(song)),
+    tx.done
+  ]);
+}
+
 export async function getSong(id: string): Promise<Song | undefined> {
   const db = await getDB();
   return db.get("songs", id);
