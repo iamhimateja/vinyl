@@ -8,15 +8,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Comprehensive test coverage with Vitest (98 tests)
+- **Quick Play** - Drag & drop audio files to play instantly without importing to library
+  - Drop zone overlay appears when dragging files over the app
+  - Option to "Play Now" (temporary) or "Add to Library & Play"
+  - Support for multiple files as temporary playlist queue
+  - Metadata extraction and display for dropped files
+- Comprehensive test coverage with Vitest (230 tests, up from 98)
+- New `audioMetadata.test.ts` with 77 tests for format detection
+- Format-specific playback tests for all supported audio types
 - GitHub Actions CI/CD workflows
 - Contributing guide with detailed instructions
 - Issue and PR templates
 - Security policy
 - Dependabot configuration for automated dependency updates
+- Release management scripts (`scripts/release.sh`)
+
+### Fixed
+- **Audio format support** - Fixed M4A and other formats not being detected
+  - Added missing MIME types: `audio/mp4`, `audio/opus`, `audio/aiff`, `audio/x-ms-wma`, `audio/ape`
+  - Added missing extensions: `.opus`, `.aiff`, `.aif`, `.wma`, `.ape`
+  - Now supports 26 MIME types and 12 file extensions
+  - Proper fallback from MIME type to extension detection
 
 ### Changed
 - Updated ESLint configuration with better React hooks rules
+- Exported `SUPPORTED_AUDIO_TYPES` and `SUPPORTED_AUDIO_EXTENSIONS` constants
 
 ## [1.0.0] - 2024-01-16
 
