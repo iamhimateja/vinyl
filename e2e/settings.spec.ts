@@ -30,7 +30,6 @@ test.describe('Settings', () => {
   });
 
   test('should display accent color options', async ({ page }) => {
-    // Look for accent color section
     const accentSection = page.locator('text=Accent Color').first();
     await expect(accentSection).toBeVisible();
   });
@@ -40,8 +39,16 @@ test.describe('Settings', () => {
     await expect(eqSection).toBeVisible();
   });
 
-  test('should display about section', async ({ page }) => {
-    const aboutSection = page.locator('text=About').first();
-    await expect(aboutSection).toBeVisible();
+  test('should display playback section', async ({ page }) => {
+    const playbackSection = page.locator('text=Crossfade').first();
+    await expect(playbackSection).toBeVisible();
+  });
+});
+
+test.describe('About Page', () => {
+  test('should display about page', async ({ page }) => {
+    await page.goto('/about');
+    const aboutContent = page.locator('text=Vinyl').first();
+    await expect(aboutContent).toBeVisible();
   });
 });

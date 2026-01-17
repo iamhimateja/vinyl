@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
+import path from "path";
 
 // Check if we're building for a desktop environment (Tauri or Electron)
 const isTauri = process.env.TAURI_ENV_PLATFORM !== undefined;
@@ -25,6 +26,12 @@ export default defineConfig({
   },
   // Env variables starting with TAURI_ are exposed to the client
   envPrefix: ["VITE_", "TAURI_"],
+  // Path aliases
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
+  },
   plugins: [
     react(),
     tailwindcss(),
@@ -158,16 +165,40 @@ export default defineConfig({
           "react-vendor": ["react", "react-dom"],
           // Router
           router: ["react-router-dom"],
-          // UI libraries
+          // UI libraries (legacy)
           "ui-vendor": [
             "lucide-react",
             "react-tooltip",
             "@tanstack/react-virtual",
           ],
+          // Radix UI primitives (shadcn)
+          "radix-ui": [
+            "@radix-ui/react-alert-dialog",
+            "@radix-ui/react-dialog",
+            "@radix-ui/react-tooltip",
+            "@radix-ui/react-slot",
+            "@radix-ui/react-popover",
+          ],
+          // Command menu
+          cmdk: ["cmdk"],
+          // Toast notifications
+          sonner: ["sonner"],
+          // Drag and drop
+          "dnd-kit": [
+            "@dnd-kit/core",
+            "@dnd-kit/sortable",
+            "@dnd-kit/utilities",
+          ],
           // Music metadata parser (large library)
           "music-metadata": ["music-metadata"],
           // IndexedDB
           idb: ["idb"],
+          // Class utilities
+          "class-utils": [
+            "clsx",
+            "tailwind-merge",
+            "class-variance-authority",
+          ],
         },
       },
     },

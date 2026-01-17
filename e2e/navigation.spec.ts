@@ -6,7 +6,6 @@ test.describe('Navigation', () => {
   });
 
   test('should navigate to settings', async ({ page }) => {
-    // Click settings link in sidebar
     await page.click('a[href="/settings"]');
     await expect(page).toHaveURL(/.*settings/);
   });
@@ -16,17 +15,18 @@ test.describe('Navigation', () => {
     await expect(page).toHaveURL(/.*playlists/);
   });
 
-  test('should navigate to favorites', async ({ page }) => {
-    await page.click('a[href="/favorites"]');
-    await expect(page).toHaveURL(/.*favorites/);
+  test('should navigate to generator', async ({ page }) => {
+    await page.click('a[href="/generator"]');
+    await expect(page).toHaveURL(/.*generator/);
   });
 
-  test('should navigate back to home', async ({ page }) => {
+  test('should navigate back to library', async ({ page }) => {
+    // First go to settings
     await page.click('a[href="/settings"]');
     await expect(page).toHaveURL(/.*settings/);
     
-    // Click home/library link
-    await page.click('a[href="/"]');
-    await expect(page).toHaveURL('/');
+    // Click library link to go back
+    await page.click('a[href="/library"]');
+    await expect(page).toHaveURL(/.*library/);
   });
 });

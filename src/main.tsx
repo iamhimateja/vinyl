@@ -4,7 +4,9 @@ import { BrowserRouter, HashRouter } from "react-router-dom";
 import "./index.css";
 import App from "./App.tsx";
 import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
-import { TooltipProvider } from "./components/Tooltip.tsx";
+import { TooltipProvider as LegacyTooltipProvider } from "./components/Tooltip.tsx";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { Toaster } from "@/components/ui/sonner";
 
 // Global error handler for uncaught errors
 window.onerror = (message, _source, _lineno, _colno, error) => {
@@ -30,10 +32,13 @@ if (root) {
   // Disable StrictMode in desktop apps to avoid double-effect issues
   const content = (
     <ErrorBoundary>
-      <Router>
-        <App />
-        <TooltipProvider />
-      </Router>
+      <TooltipProvider delayDuration={300}>
+        <Router>
+          <App />
+          <LegacyTooltipProvider />
+          <Toaster position="bottom-right" />
+        </Router>
+      </TooltipProvider>
     </ErrorBoundary>
   );
 

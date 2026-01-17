@@ -392,8 +392,8 @@ export function useSongs() {
 
         try {
           // Read the file to extract metadata
-          const data = await readFileData(file.path);
-          const blob = new Blob([new Uint8Array(data)]);
+          const result = await readFileData(file.path);
+          const blob = new Blob([new Uint8Array(result.data)]);
           const fileObj = new File([blob], file.name, { type: "audio/mpeg" });
 
           const metadata = await extractMetadata(fileObj);
@@ -434,7 +434,7 @@ export function useSongs() {
             sourceType: "local",
             addedAt: Date.now(),
             fileName: file.name,
-            fileSize: data.length,
+            fileSize: result.data.length,
             filePath: file.path, // Store full path for desktop
           };
 
@@ -561,8 +561,8 @@ export function useSongs() {
 
         try {
           // Read the file to extract metadata
-          const data = await readFileData(file.path);
-          const blob = new Blob([new Uint8Array(data)]);
+          const result = await readFileData(file.path);
+          const blob = new Blob([new Uint8Array(result.data)]);
           const fileObj = new File([blob], file.name, { type: "audio/mpeg" });
 
           const metadata = await extractMetadata(fileObj);
@@ -598,7 +598,7 @@ export function useSongs() {
             sourceType: "local",
             addedAt: Date.now(),
             fileName: file.name,
-            fileSize: data.length,
+            fileSize: result.data.length,
             filePath: file.path,
           };
 

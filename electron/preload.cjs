@@ -15,10 +15,16 @@ contextBridge.exposeInMainWorld("electron", {
 
   readFile: async (filePath) => {
     const result = await ipcRenderer.invoke("fs:readFile", filePath);
-    if (result.error) {
+    if (result.error && !result.data) {
       throw new Error(result.error);
     }
-    return new Uint8Array(result.data);
+    // Return the full result with transcoding info
+    return {
+      data: result.data,
+      transcoded: result.transcoded,
+      mimeType: result.mimeType,
+      error: result.error, // May have warning even with data
+    };
   },
 
   fileExists: (filePath) => ipcRenderer.invoke("fs:fileExists", filePath),

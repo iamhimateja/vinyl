@@ -1,6 +1,8 @@
 const { app, BrowserWindow, ipcMain, dialog, shell, Tray, Menu, nativeImage } = require("electron");
 const path = require("path");
 const fs = require("fs");
+const { spawn } = require("child_process");
+const os = require("os");
 
 // Suppress security warnings in development (CSP warning is expected due to Vite HMR needing unsafe-eval)
 // These warnings don't appear in production builds
@@ -21,6 +23,154 @@ let currentPlaybackState = {
   isPlaying: false,
   song: null,
 };
+
+// ============================================
+// Audio Transcoding (FFmpeg)
+// ============================================
+
+// Cache directory for transcoded audio files
+const TRANSCODE_CACHE_DIR = path.join(app.getPath("userData"), "transcode-cache");
+
+// Formats that need transcoding on Linux (Chromium doesn't support these natively)
+const FORMATS_NEEDING_TRANSCODE = [".m4a", ".aac", ".wma", ".ape"];
+
+// Check if a format needs transcoding
+function needsTranscoding(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  // On Linux, these formats need transcoding
+  if (process.platform === "linux") {
+    return FORMATS_NEEDING_TRANSCODE.includes(ext);
+  }
+  // On Windows/macOS, only WMA and APE need transcoding
+  return [".wma", ".ape"].includes(ext);
+}
+
+// Get cache path for a file
+function getTranscodeCachePath(filePath) {
+  // Create a hash of the file path for the cache filename
+  const crypto = require("crypto");
+  const hash = crypto.createHash("md5").update(filePath).digest("hex");
+  const ext = ".wav"; // Transcode to WAV for best compatibility
+  return path.join(TRANSCODE_CACHE_DIR, `${hash}${ext}`);
+}
+
+// Ensure cache directory exists
+function ensureTranscodeCacheDir() {
+  if (!fs.existsSync(TRANSCODE_CACHE_DIR)) {
+    fs.mkdirSync(TRANSCODE_CACHE_DIR, { recursive: true });
+    console.log("[Transcode] Created cache directory:", TRANSCODE_CACHE_DIR);
+  }
+}
+
+// Check if FFmpeg is available
+let ffmpegAvailable = null;
+async function checkFFmpeg() {
+  if (ffmpegAvailable !== null) return ffmpegAvailable;
+  
+  return new Promise((resolve) => {
+    const ffmpeg = spawn("ffmpeg", ["-version"]);
+    ffmpeg.on("error", () => {
+      console.log("[Transcode] FFmpeg not found on system");
+      ffmpegAvailable = false;
+      resolve(false);
+    });
+    ffmpeg.on("close", (code) => {
+      ffmpegAvailable = code === 0;
+      if (ffmpegAvailable) {
+        console.log("[Transcode] FFmpeg available");
+      }
+      resolve(ffmpegAvailable);
+    });
+  });
+}
+
+// Transcode audio file to WAV using FFmpeg
+function transcodeAudio(inputPath, outputPath) {
+  return new Promise((resolve, reject) => {
+    console.log("[Transcode] Starting:", inputPath);
+    
+    const ffmpeg = spawn("ffmpeg", [
+      "-i", inputPath,           // Input file
+      "-y",                      // Overwrite output
+      "-vn",                     // No video
+      "-acodec", "pcm_s16le",    // PCM 16-bit (WAV)
+      "-ar", "44100",            // Sample rate
+      "-ac", "2",                // Stereo
+      outputPath
+    ]);
+    
+    let stderr = "";
+    ffmpeg.stderr.on("data", (data) => {
+      stderr += data.toString();
+    });
+    
+    ffmpeg.on("error", (err) => {
+      console.error("[Transcode] FFmpeg spawn error:", err.message);
+      reject(new Error(`FFmpeg not available: ${err.message}`));
+    });
+    
+    ffmpeg.on("close", (code) => {
+      if (code === 0) {
+        console.log("[Transcode] Complete:", outputPath);
+        resolve(outputPath);
+      } else {
+        console.error("[Transcode] Failed with code:", code);
+        console.error("[Transcode] stderr:", stderr.slice(-500));
+        reject(new Error(`FFmpeg failed with code ${code}`));
+      }
+    });
+  });
+}
+
+// Get audio file data, transcoding if necessary
+async function getAudioFileData(filePath) {
+  // Check if transcoding is needed
+  if (needsTranscoding(filePath)) {
+    const hasFFmpeg = await checkFFmpeg();
+    
+    if (!hasFFmpeg) {
+      // FFmpeg not available, try to read raw file anyway
+      console.warn("[Transcode] FFmpeg not available, trying raw file");
+      return { data: fs.readFileSync(filePath).buffer, transcoded: false };
+    }
+    
+    ensureTranscodeCacheDir();
+    const cachePath = getTranscodeCachePath(filePath);
+    
+    // Check if we have a cached transcode
+    if (fs.existsSync(cachePath)) {
+      // Verify cache is newer than source
+      const srcStat = fs.statSync(filePath);
+      const cacheStat = fs.statSync(cachePath);
+      
+      if (cacheStat.mtime >= srcStat.mtime) {
+        console.log("[Transcode] Using cached:", cachePath);
+        return { 
+          data: fs.readFileSync(cachePath).buffer, 
+          transcoded: true,
+          mimeType: "audio/wav"
+        };
+      }
+    }
+    
+    // Transcode the file
+    try {
+      await transcodeAudio(filePath, cachePath);
+      return { 
+        data: fs.readFileSync(cachePath).buffer, 
+        transcoded: true,
+        mimeType: "audio/wav"
+      };
+    } catch (err) {
+      console.error("[Transcode] Error:", err.message);
+      // Fall back to raw file
+      return { data: fs.readFileSync(filePath).buffer, transcoded: false, error: err.message };
+    }
+  }
+  
+  // No transcoding needed
+  return { data: fs.readFileSync(filePath).buffer, transcoded: false };
+}
 
 // Supported audio extensions
 const AUDIO_EXTENSIONS = [
@@ -337,11 +487,17 @@ ipcMain.handle("fs:scanMusicFolder", async (event, folderPath) => {
   return { files };
 });
 
-// Read a file and return as base64 (for audio data)
+// Read a file and return as buffer (for audio data)
+// Automatically transcodes unsupported formats using FFmpeg
 ipcMain.handle("fs:readFile", async (event, filePath) => {
   try {
-    const data = fs.readFileSync(filePath);
-    return { data: data.buffer };
+    const result = await getAudioFileData(filePath);
+    return { 
+      data: result.data,
+      transcoded: result.transcoded,
+      mimeType: result.mimeType,
+      error: result.error
+    };
   } catch (error) {
     return { error: error.message };
   }

@@ -21,12 +21,9 @@ export function useAudioVisualizer(
 ) {
   const { fftSize = 512, smoothingTimeConstant = 0.8, targetFps = 30 } = options;
 
-  // Use refs for the data buffers to avoid creating new arrays every frame
-  const frequencyDataRef = useRef<Uint8Array>(new Uint8Array(fftSize / 2));
-  const waveformDataRef = useRef<Uint8Array>(new Uint8Array(fftSize / 2));
-  
-  // State to trigger re-renders at controlled rate
-  const [updateTick, setUpdateTick] = useState(0);
+  // State for the data arrays - need new references to trigger React updates
+  const [frequencyData, setFrequencyData] = useState<Uint8Array>(() => new Uint8Array(fftSize / 2));
+  const [waveformData, setWaveformData] = useState<Uint8Array>(() => new Uint8Array(fftSize / 2));
   const [isConnected, setIsConnected] = useState(false);
 
   const animationFrameRef = useRef<number | null>(null);
@@ -49,12 +46,10 @@ export function useAudioVisualizer(
       data.analyser.smoothingTimeConstant = smoothingTimeConstant;
       sharedDataRef.current = data;
       
-      // Resize buffers if fftSize changed
+      // Initialize with correct buffer size
       const bufferLength = data.analyser.frequencyBinCount;
-      if (frequencyDataRef.current.length !== bufferLength) {
-        frequencyDataRef.current = new Uint8Array(bufferLength);
-        waveformDataRef.current = new Uint8Array(bufferLength);
-      }
+      setFrequencyData(new Uint8Array(bufferLength));
+      setWaveformData(new Uint8Array(bufferLength));
       
       setIsConnected(true);
     }
@@ -84,19 +79,25 @@ export function useAudioVisualizer(
     }
 
     const analyser = sharedDataRef.current.analyser;
+    const bufferLength = analyser.frequencyBinCount;
+    
+    // Reusable buffers for reading data (avoid allocation in loop)
+    const freqBuffer = new Uint8Array(bufferLength);
+    const waveBuffer = new Uint8Array(bufferLength);
 
     const loop = (timestamp: number) => {
       // Frame rate limiting - only update at target FPS
       const elapsed = timestamp - lastUpdateTimeRef.current;
       
       if (elapsed >= frameIntervalRef.current) {
-        // Update data in-place (no new array allocation)
-        // Use type assertion to handle ArrayBuffer/ArrayBufferLike mismatch
-        analyser.getByteFrequencyData(frequencyDataRef.current as Uint8Array<ArrayBuffer>);
-        analyser.getByteTimeDomainData(waveformDataRef.current as Uint8Array<ArrayBuffer>);
+        // Read data into reusable buffers
+        analyser.getByteFrequencyData(freqBuffer);
+        analyser.getByteTimeDomainData(waveBuffer);
         
-        // Trigger re-render by incrementing tick
-        setUpdateTick(t => t + 1);
+        // Create new array references to trigger React updates
+        // This is necessary because React's memo uses shallow comparison
+        setFrequencyData(new Uint8Array(freqBuffer));
+        setWaveformData(new Uint8Array(waveBuffer));
         
         lastUpdateTimeRef.current = timestamp - (elapsed % frameIntervalRef.current);
       }
@@ -114,21 +115,16 @@ export function useAudioVisualizer(
     };
   }, [enabled, isConnected]);
 
-  // Memoized getter to return current buffer data
-  // Components should use these refs directly for rendering
-  const getFrequencyData = useCallback(() => frequencyDataRef.current, []);
-  const getWaveformData = useCallback(() => waveformDataRef.current, []);
+  // Memoized getter functions
+  const getFrequencyData = useCallback(() => frequencyData, [frequencyData]);
+  const getWaveformData = useCallback(() => waveformData, [waveformData]);
 
   return {
     isConnected,
-    // Return refs for direct access (avoids copying)
-    frequencyData: frequencyDataRef.current,
-    waveformData: waveformDataRef.current,
-    // Utility getters
+    frequencyData,
+    waveformData,
     getFrequencyData,
     getWaveformData,
     bufferLength: sharedDataRef.current?.analyser.frequencyBinCount || 0,
-    // Tick for dependency tracking in consuming components
-    updateTick,
   };
 }

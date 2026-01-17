@@ -36,6 +36,13 @@ export interface WatcherStatus {
 }
 
 // Types for Electron API exposed via preload
+interface ElectronReadFileResult {
+  data: ArrayBuffer;
+  transcoded?: boolean;
+  mimeType?: string;
+  error?: string;
+}
+
 interface ElectronAPI {
   platform: string;
   isElectron: boolean;
@@ -43,7 +50,7 @@ interface ElectronAPI {
   scanMusicFolder: (
     folderPath: string,
   ) => Promise<{ files?: MusicFileInfo[]; error?: string }>;
-  readFile: (filePath: string) => Promise<Uint8Array>;
+  readFile: (filePath: string) => Promise<ElectronReadFileResult>;
   fileExists: (filePath: string) => Promise<boolean>;
   getFileStats: (filePath: string) => Promise<{
     size: number;
@@ -224,10 +231,31 @@ export async function fileExists(filePath: string): Promise<boolean> {
 
 /**
  * Read file data from disk (Desktop only)
+ * May transcode audio files if needed for playback
  */
-export async function readFileData(filePath: string): Promise<Uint8Array> {
+export interface ReadFileResult {
+  data: Uint8Array;
+  transcoded?: boolean;
+  mimeType?: string;
+  error?: string;
+}
+
+export async function readFileData(filePath: string): Promise<ReadFileResult> {
   if (isElectron() && window.electron) {
-    return await window.electron.readFile(filePath);
+    const result = await window.electron.readFile(filePath);
+    if (result.transcoded) {
+      console.log("[Platform] Audio transcoded for playback:", filePath);
+    }
+    if (result.error) {
+      console.warn("[Platform] Transcode warning:", result.error);
+    }
+    // Convert ArrayBuffer to Uint8Array
+    return {
+      data: new Uint8Array(result.data),
+      transcoded: result.transcoded,
+      mimeType: result.mimeType,
+      error: result.error,
+    };
   }
   throw new Error("Cannot read file by path in web browser");
 }
@@ -235,6 +263,7 @@ export async function readFileData(filePath: string): Promise<Uint8Array> {
 /**
  * Convert a file path to a playable blob URL
  * Reads the file and creates a blob URL
+ * Automatically transcodes unsupported formats (like M4A on Linux)
  */
 export async function getAssetUrl(filePath: string): Promise<string | null> {
   if (!isDesktop()) {
@@ -242,26 +271,30 @@ export async function getAssetUrl(filePath: string): Promise<string | null> {
   }
 
   try {
-    const data = await readFileData(filePath);
+    const result = await readFileData(filePath);
 
-    // Determine MIME type from extension
-    const ext = filePath.split(".").pop()?.toLowerCase() || "";
-    const mimeTypes: Record<string, string> = {
-      mp3: "audio/mpeg",
-      wav: "audio/wav",
-      ogg: "audio/ogg",
-      flac: "audio/flac",
-      aac: "audio/aac",
-      m4a: "audio/mp4",
-      wma: "audio/x-ms-wma",
-      aiff: "audio/aiff",
-      opus: "audio/opus",
-      webm: "audio/webm",
-    };
-    const mimeType = mimeTypes[ext] || "audio/mpeg";
+    // Use transcoded MIME type if available, otherwise determine from extension
+    let mimeType = result.mimeType;
+    
+    if (!mimeType) {
+      const ext = filePath.split(".").pop()?.toLowerCase() || "";
+      const mimeTypes: Record<string, string> = {
+        mp3: "audio/mpeg",
+        wav: "audio/wav",
+        ogg: "audio/ogg",
+        flac: "audio/flac",
+        aac: "audio/aac",
+        m4a: "audio/mp4",
+        wma: "audio/x-ms-wma",
+        aiff: "audio/aiff",
+        opus: "audio/opus",
+        webm: "audio/webm",
+      };
+      mimeType = mimeTypes[ext] || "audio/mpeg";
+    }
 
     // Create blob URL
-    const blob = new Blob([new Uint8Array(data)], { type: mimeType });
+    const blob = new Blob([new Uint8Array(result.data)], { type: mimeType });
     return URL.createObjectURL(blob);
   } catch (error) {
     console.error("getAssetUrl failed:", filePath, error);
@@ -277,10 +310,10 @@ export async function readFileAsArrayBuffer(
   fileOrPath: File | string,
 ): Promise<ArrayBuffer> {
   if (typeof fileOrPath === "string") {
-    // Desktop: read from file path
-    const data = await readFileData(fileOrPath);
+    // Desktop: read from file path (don't transcode for metadata reading)
+    const result = await readFileData(fileOrPath);
     // Create a copy of the buffer to ensure it's a proper ArrayBuffer
-    return new Uint8Array(data).buffer as ArrayBuffer;
+    return new Uint8Array(result.data).buffer as ArrayBuffer;
   } else {
     // Web: read from File object
     return fileOrPath.arrayBuffer();

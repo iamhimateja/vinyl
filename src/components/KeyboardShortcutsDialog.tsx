@@ -1,6 +1,10 @@
-import { useEffect } from "react";
-import { createPortal } from "react-dom";
-import { X, Keyboard } from "lucide-react";
+import { Keyboard } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 interface KeyboardShortcutsDialogProps {
   isOpen: boolean;
@@ -67,44 +71,18 @@ export function KeyboardShortcutsDialog({
   isOpen,
   onClose,
 }: KeyboardShortcutsDialogProps) {
-  // Close on Escape key
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        onClose();
-      }
-    };
-
-    document.addEventListener("keydown", handleEscape);
-    return () => document.removeEventListener("keydown", handleEscape);
-  }, [isOpen, onClose]);
-
-  if (!isOpen) return null;
-
-  // Use portal to render at document body level
-  return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={onClose}
-      />
-
-      {/* Dialog */}
-      <div className="relative bg-vinyl-surface border border-vinyl-border rounded-2xl shadow-2xl w-full max-w-md max-h-[85vh] flex flex-col animate-fade-in">
+  return (
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-md max-h-[85vh] flex flex-col p-0 gap-0">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-vinyl-border flex-shrink-0">
+        <DialogHeader className="px-6 py-4 border-b border-vinyl-border flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-vinyl-accent/20 rounded-xl flex items-center justify-center">
               <Keyboard className="w-5 h-5 text-vinyl-accent" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-vinyl-text">
-                Keyboard Shortcuts
-              </h2>
-              <p className="text-xs text-vinyl-text-muted">
+              <DialogTitle>Keyboard Shortcuts</DialogTitle>
+              <p className="text-xs text-vinyl-text-muted mt-1">
                 Press{" "}
                 <kbd className="px-1.5 py-0.5 bg-vinyl-border rounded text-[10px] font-mono">
                   ?
@@ -113,13 +91,7 @@ export function KeyboardShortcutsDialog({
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-lg text-vinyl-text-muted hover:text-vinyl-text hover:bg-vinyl-border/50 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+        </DialogHeader>
 
         {/* Shortcuts list - scrollable */}
         <div className="p-4 overflow-y-auto flex-1">
@@ -148,13 +120,12 @@ export function KeyboardShortcutsDialog({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3 border-t border-vinyl-border bg-vinyl-border/20 rounded-b-2xl flex-shrink-0">
+        <div className="px-6 py-3 border-t border-vinyl-border bg-vinyl-border/20 rounded-b-xl flex-shrink-0">
           <p className="text-xs text-vinyl-text-muted text-center">
             Shortcuts are disabled when typing in text fields
           </p>
         </div>
-      </div>
-    </div>,
-    document.body,
+      </DialogContent>
+    </Dialog>
   );
 }

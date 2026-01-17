@@ -28,14 +28,8 @@ export default defineConfig({
       name: 'webkit',
       use: { ...devices['Desktop Safari'] },
     },
-    {
-      name: 'mobile-chrome',
-      use: { ...devices['Pixel 5'] },
-    },
-    {
-      name: 'mobile-safari',
-      use: { ...devices['iPhone 12'] },
-    },
+    // Mobile tests disabled - will be added when Capacitor mobile app is implemented
+    // See TODO.md for mobile app roadmap
   ],
   webServer: {
     command: 'bun run dev',
