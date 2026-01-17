@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useRef } from "react";
 
 interface KeyboardShortcutsOptions {
   onPlayPause: () => void;
@@ -11,8 +11,17 @@ interface KeyboardShortcutsOptions {
   onToggleRepeat: () => void;
   onSeekForward: () => void;
   onSeekBackward: () => void;
+  onCycleVisualizer?: () => void;
+  onToggleVisualizerOff?: () => void;
+  onToggleMusicInfo?: () => void;
+  onToggleEqualizer?: () => void;
+  onToggleFavorite?: () => void;
+  onToggleQueue?: () => void;
   enabled?: boolean;
 }
+
+// Time window for double-press detection (in ms)
+const DOUBLE_PRESS_THRESHOLD = 300;
 
 export function useKeyboardShortcuts({
   onPlayPause,
@@ -25,8 +34,18 @@ export function useKeyboardShortcuts({
   onToggleRepeat,
   onSeekForward,
   onSeekBackward,
+  onCycleVisualizer,
+  onToggleVisualizerOff,
+  onToggleMusicInfo,
+  onToggleEqualizer,
+  onToggleFavorite,
+  onToggleQueue,
   enabled = true,
 }: KeyboardShortcutsOptions) {
+  // Track last key press time for double-press detection
+  const lastKeyPressRef = useRef<{ key: string; time: number } | null>(null);
+  const doublePressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
       // Don't trigger shortcuts when typing in an input
@@ -42,6 +61,49 @@ export function useKeyboardShortcuts({
       // Check for modifier keys - don't interfere with browser shortcuts
       if (event.metaKey || event.ctrlKey || event.altKey) {
         return;
+      }
+
+      const key = event.key.toLowerCase();
+      const now = Date.now();
+
+      // Check for double-press on specific keys
+      if (key === "v" && onToggleVisualizerOff && onCycleVisualizer) {
+        event.preventDefault();
+        
+        const lastPress = lastKeyPressRef.current;
+        if (lastPress && lastPress.key === "v" && (now - lastPress.time) < DOUBLE_PRESS_THRESHOLD) {
+          // Double press detected - turn off visualizer
+          if (doublePressTimeoutRef.current) {
+            clearTimeout(doublePressTimeoutRef.current);
+            doublePressTimeoutRef.current = null;
+          }
+          lastKeyPressRef.current = null;
+          onToggleVisualizerOff();
+        } else {
+          // First press - wait to see if it's a double press
+          lastKeyPressRef.current = { key: "v", time: now };
+          
+          // Clear any existing timeout
+          if (doublePressTimeoutRef.current) {
+            clearTimeout(doublePressTimeoutRef.current);
+          }
+          
+          // Set timeout to trigger single press action
+          doublePressTimeoutRef.current = setTimeout(() => {
+            if (lastKeyPressRef.current?.key === "v") {
+              onCycleVisualizer();
+              lastKeyPressRef.current = null;
+            }
+          }, DOUBLE_PRESS_THRESHOLD);
+        }
+        return;
+      }
+
+      // Reset double-press tracking for other keys
+      lastKeyPressRef.current = null;
+      if (doublePressTimeoutRef.current) {
+        clearTimeout(doublePressTimeoutRef.current);
+        doublePressTimeoutRef.current = null;
       }
 
       switch (event.key) {
@@ -99,6 +161,38 @@ export function useKeyboardShortcuts({
           event.preventDefault();
           onToggleRepeat();
           break;
+
+        case "i":
+        case "I": // I - Toggle music info
+          if (onToggleMusicInfo) {
+            event.preventDefault();
+            onToggleMusicInfo();
+          }
+          break;
+
+        case "e":
+        case "E": // E - Toggle equalizer
+          if (onToggleEqualizer) {
+            event.preventDefault();
+            onToggleEqualizer();
+          }
+          break;
+
+        case "f":
+        case "F": // F - Toggle favorite
+          if (onToggleFavorite) {
+            event.preventDefault();
+            onToggleFavorite();
+          }
+          break;
+
+        case "q":
+        case "Q": // Q - Toggle queue view
+          if (onToggleQueue) {
+            event.preventDefault();
+            onToggleQueue();
+          }
+          break;
       }
     },
     [
@@ -112,6 +206,12 @@ export function useKeyboardShortcuts({
       onToggleRepeat,
       onSeekForward,
       onSeekBackward,
+      onCycleVisualizer,
+      onToggleVisualizerOff,
+      onToggleMusicInfo,
+      onToggleEqualizer,
+      onToggleFavorite,
+      onToggleQueue,
     ]
   );
 
@@ -121,6 +221,10 @@ export function useKeyboardShortcuts({
     document.addEventListener("keydown", handleKeyDown);
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
+      // Clean up timeout on unmount
+      if (doublePressTimeoutRef.current) {
+        clearTimeout(doublePressTimeoutRef.current);
+      }
     };
   }, [handleKeyDown, enabled]);
 }

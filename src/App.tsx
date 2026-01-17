@@ -18,6 +18,7 @@ import { PlayerOverlay } from "./components/PlayerOverlay";
 import { TopNav } from "./components/TopNav";
 import { MusicGeneratorView } from "./components/MusicGeneratorView";
 import { QuickPlayOverlay, DropZoneOverlay } from "./components/QuickPlayOverlay";
+import { MusicInfoDialog } from "./components/MusicInfoDialog";
 import { useSongs, checkSongsAvailability } from "./hooks/useSongs";
 import { usePlaylists } from "./hooks/usePlaylists";
 import { useAudioPlayer } from "./hooks/useAudioPlayer";
@@ -190,6 +191,7 @@ function App() {
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [droppedFiles, setDroppedFiles] = useState<File[]>([]);
   const [showQuickPlayOverlay, setShowQuickPlayOverlay] = useState(false);
+  const [showMusicInfoDialog, setShowMusicInfoDialog] = useState(false);
   const dragCounterRef = useRef(0);
 
   const { settings, updateSetting, resetSettings } = useSettings();
@@ -306,6 +308,23 @@ function App() {
   // Track previous volume for mute toggle
   const previousVolumeRef = useRef(volume);
 
+  // Visualizer style cycling
+  const visualizerStyles: Array<"bars" | "wave" | "areaWave"> = ["bars", "wave", "areaWave"];
+  
+  const cycleVisualizerStyle = useCallback(() => {
+    const currentIndex = visualizerStyles.indexOf(settings.visualizerStyle);
+    const nextIndex = (currentIndex + 1) % visualizerStyles.length;
+    // Enable visualizer if it's off when cycling
+    if (!settings.visualizerEnabled) {
+      updateSetting("visualizerEnabled", true);
+    }
+    updateSetting("visualizerStyle", visualizerStyles[nextIndex]);
+  }, [settings.visualizerStyle, settings.visualizerEnabled, updateSetting]);
+
+  const turnOffVisualizer = useCallback(() => {
+    updateSetting("visualizerEnabled", false);
+  }, [updateSetting]);
+
   // Keyboard shortcuts for playback control
   useKeyboardShortcuts({
     onPlayPause: togglePlayPause,
@@ -325,6 +344,11 @@ function App() {
     onToggleRepeat: toggleRepeat,
     onSeekForward: () => seek(Math.min(duration, currentTime + 5)),
     onSeekBackward: () => seek(Math.max(0, currentTime - 5)),
+    onCycleVisualizer: cycleVisualizerStyle,
+    onToggleVisualizerOff: turnOffVisualizer,
+    onToggleMusicInfo: () => setShowMusicInfoDialog(prev => !prev),
+    onToggleEqualizer: toggleEqualizer,
+    onToggleFavorite: currentSong ? () => toggleFavorite(currentSong.id) : undefined,
     enabled: !showFirstLaunchWizard,
   });
 
@@ -1185,6 +1209,13 @@ function App() {
         onPlayFiles={handleQuickPlayFiles}
         onImportAndPlay={handleImportAndPlayFiles}
         onDismiss={handleDismissQuickPlay}
+      />
+
+      {/* Music Info Dialog - shows detailed track information */}
+      <MusicInfoDialog
+        isOpen={showMusicInfoDialog}
+        onClose={() => setShowMusicInfoDialog(false)}
+        song={currentSong || null}
       />
     </div>
   );
