@@ -106,12 +106,48 @@ Note: macOS builds require macOS for code signing.
 
 ---
 
+## Prerequisites
+
+**package.json must have:**
+```json
+{
+  "description": "Your app description",
+  "author": {
+    "name": "Your Name",
+    "email": "your@email.com"
+  }
+}
+```
+
+**Icons (for Linux builds):**
+PNG icons required in `public/icons/`. Generate from SVG:
+```bash
+cd public/icons
+for size in 16 32 48 64 128 256 512; do
+  convert -background none -resize ${size}x${size} icon.svg ${size}x${size}.png
+done
+```
+
+---
+
 ## Troubleshooting
 
 **Build fails with missing dependencies:**
 ```bash
 bun install
 ```
+
+**"icon directory doesn't contain icons":**
+```bash
+# Generate PNG icons from SVG (requires ImageMagick)
+cd public/icons
+for size in 16 32 48 64 128 256 512; do
+  convert -background none -resize ${size}x${size} icon.svg ${size}x${size}.png
+done
+```
+
+**"Please specify author email":**
+Add author field to package.json (see Prerequisites above).
 
 **Electron build fails:**
 ```bash
