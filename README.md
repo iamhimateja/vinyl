@@ -9,6 +9,7 @@ A beautiful, minimal, offline-first music player that feels like a personal viny
 
 ### 🎧 Music Playback
 - **Play local audio files** - MP3, FLAC, WAV, OGG, AAC, M4A, OPUS, and more
+- **Quick Play** - Drag & drop files to play instantly without importing
 - **Animated Vinyl Record** - Spins while playing with realistic grooves
 - **Gapless playback** - Seamless transitions between tracks
 - **Crossfade** - Smooth blending between songs (configurable 0-12s)
@@ -144,6 +145,7 @@ vinyl-music-player/
 │   │   ├── DraggableQueueList.tsx   # Drag-to-reorder queue
 │   │   ├── VirtualizedSongList.tsx  # Virtualized list
 │   │   ├── ImportMusic.tsx          # File import modal
+│   │   ├── QuickPlayOverlay.tsx     # Drag & drop quick play
 │   │   ├── LibrarySettings.tsx      # Library folder management
 │   │   ├── FirstLaunchWizard.tsx    # Setup wizard
 │   │   ├── PlaylistView.tsx         # Playlist management
@@ -234,6 +236,25 @@ vinyl-music-player/
 
 ---
 
+## 🎵 Quick Play (Drag & Drop)
+
+Play audio files instantly without adding them to your library:
+
+1. **Drag files** onto the app window from your file manager
+2. **Drop** to see the Quick Play dialog
+3. **Choose an option:**
+   - **Play Now** - Play immediately without importing (temporary)
+   - **Add to Library & Play** - Import to library and start playing
+
+### Features
+- Works with single files or multiple files
+- Multiple files create a temporary playlist queue
+- Shows metadata (title, artist, album art, duration)
+- Supports all audio formats (MP3, FLAC, WAV, etc.)
+- Files played with "Play Now" don't clutter your library
+
+---
+
 ## ⌨️ Keyboard Shortcuts
 
 | Key | Action |
@@ -269,6 +290,7 @@ This app is completely private:
 |---------|-------------------|-----------|
 | Import files | ✅ | ✅ |
 | Import folders | ✅ | ✅ (session only) |
+| Quick Play (drag & drop) | ✅ | ✅ |
 | Auto folder watching | ✅ | ❌ |
 | First-launch wizard | ✅ | ❌ |
 | Persistent folder access | ✅ | ❌ |
@@ -291,6 +313,7 @@ This app is completely private:
 
 ## ✅ Recently Completed
 
+- [x] Quick Play - Drag & drop files to play without importing
 - [x] Queue management UI (drag to reorder)
 - [x] Audio visualization (bars, wave, area styles)
 - [x] Crossfade between tracks
