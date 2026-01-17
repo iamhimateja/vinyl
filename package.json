@@ -2,6 +2,11 @@
   "name": "vinyl-music-player",
   "private": true,
   "version": "0.1.0",
+  "description": "A Music Player",
+  "author": {
+    "name": "Hima Teja",
+    "email": "iamhimateja@gmail.com"
+  },
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
