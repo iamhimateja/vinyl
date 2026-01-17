@@ -52,6 +52,13 @@ const shortcutGroups: ShortcutGroup[] = [
     title: "Display",
     shortcuts: [
       { key: "I", description: "Toggle music info" },
+      { key: "?", description: "Show keyboard shortcuts" },
+    ],
+  },
+  {
+    title: "Quick Actions",
+    shortcuts: [
+      { key: "⌘/Ctrl K", description: "Open command menu" },
     ],
   },
 ];

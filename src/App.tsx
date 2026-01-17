@@ -19,6 +19,8 @@ import { TopNav } from "./components/TopNav";
 import { MusicGeneratorView } from "./components/MusicGeneratorView";
 import { QuickPlayOverlay, DropZoneOverlay } from "./components/QuickPlayOverlay";
 import { MusicInfoDialog } from "./components/MusicInfoDialog";
+import { CommandMenu } from "./components/CommandMenu";
+import { KeyboardShortcutsDialog } from "./components/KeyboardShortcutsDialog";
 import { useSongs, checkSongsAvailability } from "./hooks/useSongs";
 import { usePlaylists } from "./hooks/usePlaylists";
 import { useAudioPlayer } from "./hooks/useAudioPlayer";
@@ -196,6 +198,8 @@ function App() {
   const [droppedFiles, setDroppedFiles] = useState<File[]>([]);
   const [showQuickPlayOverlay, setShowQuickPlayOverlay] = useState(false);
   const [showMusicInfoDialog, setShowMusicInfoDialog] = useState(false);
+  const [showCommandMenu, setShowCommandMenu] = useState(false);
+  const [showKeyboardShortcuts, setShowKeyboardShortcuts] = useState(false);
   const dragCounterRef = useRef(0);
 
   const { settings, updateSetting, resetSettings } = useSettings();
@@ -358,8 +362,30 @@ function App() {
     onToggleMusicInfo: () => setShowMusicInfoDialog(prev => !prev),
     onToggleEqualizer: toggleEqualizer,
     onToggleFavorite: currentSong ? () => toggleFavorite(currentSong.id) : undefined,
-    enabled: !showFirstLaunchWizard,
+    enabled: !showFirstLaunchWizard && !showCommandMenu,
   });
+
+  // Command menu keyboard shortcut (Cmd/Ctrl+K)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Cmd+K or Ctrl+K to open command menu
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setShowCommandMenu(prev => !prev);
+      }
+      // ? to open keyboard shortcuts (when not in input)
+      if (e.key === "?" && !showCommandMenu) {
+        const target = e.target as HTMLElement;
+        if (target.tagName !== "INPUT" && target.tagName !== "TEXTAREA" && !target.isContentEditable) {
+          e.preventDefault();
+          setShowKeyboardShortcuts(prev => !prev);
+        }
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [showCommandMenu]);
 
   // System tray integration (Desktop only)
   // Update tray when playback state changes
@@ -1263,6 +1289,47 @@ function App() {
         isOpen={showMusicInfoDialog}
         onClose={() => setShowMusicInfoDialog(false)}
         song={currentSong || null}
+      />
+
+      {/* Command Menu (Cmd/Ctrl+K) */}
+      <CommandMenu
+        isOpen={showCommandMenu}
+        onClose={() => setShowCommandMenu(false)}
+        songs={songs}
+        isPlaying={isPlaying}
+        currentSong={currentSong || null}
+        shuffle={shuffle}
+        repeat={repeat}
+        volume={volume}
+        onPlayPause={togglePlayPause}
+        onNext={playNext}
+        onPrevious={playPrevious}
+        onToggleShuffle={toggleShuffle}
+        onToggleRepeat={toggleRepeat}
+        onMute={() => {
+          if (volume > 0) {
+            previousVolumeRef.current = volume;
+            setVolume(0);
+          } else {
+            setVolume(previousVolumeRef.current || 0.5);
+          }
+        }}
+        onPlaySong={(song) => playSong(song, null)}
+        favoriteSongIds={favoriteSongIds}
+        onToggleFavorite={toggleFavorite}
+        theme={settings.theme}
+        onToggleTheme={() => updateSetting("theme", settings.theme === "dark" ? "light" : "dark")}
+        visualizerEnabled={settings.visualizerEnabled}
+        onToggleVisualizer={() => updateSetting("visualizerEnabled", !settings.visualizerEnabled)}
+        onCycleVisualizerStyle={cycleVisualizerStyle}
+        onShowMusicInfo={() => setShowMusicInfoDialog(true)}
+        onShowKeyboardShortcuts={() => setShowKeyboardShortcuts(true)}
+      />
+
+      {/* Keyboard Shortcuts Dialog */}
+      <KeyboardShortcutsDialog
+        isOpen={showKeyboardShortcuts}
+        onClose={() => setShowKeyboardShortcuts(false)}
       />
     </div>
   );
