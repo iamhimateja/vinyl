@@ -75,7 +75,7 @@ class MockAudio {
 }
 
 // Store original Audio
-const originalAudio = global.Audio;
+const originalAudio = globalThis.Audio;
 
 describe('useAudioPlayer', () => {
   const mockSongs: Song[] = [
@@ -103,15 +103,15 @@ describe('useAudioPlayer', () => {
     vi.clearAllMocks();
     
     // Mock Audio constructor with a proper class
-    global.Audio = MockAudio as unknown as typeof Audio;
+    globalThis.Audio = MockAudio as unknown as typeof Audio;
 
     // Mock URL methods
-    global.URL.createObjectURL = vi.fn().mockReturnValue('blob:test-url');
-    global.URL.revokeObjectURL = vi.fn();
+    globalThis.URL.createObjectURL = vi.fn().mockReturnValue('blob:test-url');
+    globalThis.URL.revokeObjectURL = vi.fn();
   });
 
   afterEach(() => {
-    global.Audio = originalAudio;
+    globalThis.Audio = originalAudio;
   });
 
   describe('initial state', () => {
@@ -161,9 +161,9 @@ describe('useAudioPlayer', () => {
       });
 
       expect(playResult).not.toBeNull();
-      expect(playResult?.title).toBe('Quick Play Song');
-      expect(playResult?.artist).toBe('Quick Play Artist');
-      expect(playResult?.id).toMatch(/^quick-play-/);
+      expect(playResult!.title).toBe('Quick Play Song');
+      expect(playResult!.artist).toBe('Quick Play Artist');
+      expect(playResult!.id).toMatch(/^quick-play-/);
     });
 
     // Test various audio formats
@@ -188,7 +188,7 @@ describe('useAudioPlayer', () => {
       });
 
       expect(playResult).not.toBeNull();
-      expect(playResult?.id).toMatch(/^quick-play-/);
+      expect(playResult!.id).toMatch(/^quick-play-/);
     });
 
     it('sets the current song to the quick-play song', async () => {
@@ -226,7 +226,7 @@ describe('useAudioPlayer', () => {
         await result.current.playFile(audioFile);
       });
 
-      expect(global.URL.createObjectURL).toHaveBeenCalledWith(audioFile);
+      expect(globalThis.URL.createObjectURL).toHaveBeenCalledWith(audioFile);
     });
 
     it('sets queue with only the quick-play song', async () => {
