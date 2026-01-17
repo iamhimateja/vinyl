@@ -651,3 +651,41 @@ interface ElectronAPIWithTray extends ElectronAPI {
     onPrevious: (callback: () => void) => () => void;
   };
 }
+
+// Extended Electron API type with file open
+interface ElectronAPIWithFileOpen extends ElectronAPI {
+  fileOpen: {
+    getPendingFiles: () => Promise<string[]>;
+    onFileOpen: (callback: (filePath: string) => void) => () => void;
+  };
+}
+
+// ============================================
+// File Open (Open With from Finder/Explorer)
+// ============================================
+
+/**
+ * Get any files that were opened before the app was ready
+ */
+export async function getPendingOpenFiles(): Promise<string[]> {
+  if (isElectron() && (window.electron as ElectronAPIWithFileOpen)?.fileOpen) {
+    try {
+      return await (window.electron as ElectronAPIWithFileOpen).fileOpen.getPendingFiles();
+    } catch (error) {
+      console.error("Failed to get pending files:", error);
+      return [];
+    }
+  }
+  return [];
+}
+
+/**
+ * Subscribe to file open events (when files are opened via "Open With")
+ * Returns an unsubscribe function
+ */
+export function onFileOpen(callback: (filePath: string) => void): () => void {
+  if (isElectron() && (window.electron as ElectronAPIWithFileOpen)?.fileOpen) {
+    return (window.electron as ElectronAPIWithFileOpen).fileOpen.onFileOpen(callback);
+  }
+  return () => {};
+}

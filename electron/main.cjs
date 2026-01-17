@@ -1,20 +1,122 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, Tray, Menu, nativeImage } = require("electron");
 const path = require("path");
 const fs = require("fs");
-const { spawn } = require("child_process");
 const os = require("os");
+
+// Early debug logging to file
+const debugLogPath = path.join(os.tmpdir(), "vinyl-debug.log");
+function debugLog(msg) {
+  try {
+    fs.appendFileSync(debugLogPath, `[${new Date().toISOString()}] ${msg}\n`);
+  } catch (e) { /* ignore */ }
+}
+
+debugLog("=== Vinyl Starting ===");
+debugLog(`__dirname: ${__dirname}`);
+debugLog(`process.versions.electron: ${process.versions.electron}`);
+
+let electron, app, BrowserWindow, ipcMain, dialog, shell, Tray, Menu, nativeImage;
+
+try {
+  debugLog("Requiring electron...");
+  electron = require("electron");
+  debugLog(`electron module loaded: ${typeof electron}`);
+  debugLog(`electron.app: ${typeof electron.app}`);
+  
+  app = electron.app;
+  BrowserWindow = electron.BrowserWindow;
+  ipcMain = electron.ipcMain;
+  dialog = electron.dialog;
+  shell = electron.shell;
+  Tray = electron.Tray;
+  Menu = electron.Menu;
+  nativeImage = electron.nativeImage;
+  
+  debugLog("Electron components extracted");
+} catch (e) {
+  debugLog(`ERROR: ${e.message}\n${e.stack}`);
+  throw e;
+}
+
+const { spawn } = require("child_process");
+
+// Check if we're running in a packaged app
+const isPackaged = app && typeof app.isPackaged === 'boolean' ? app.isPackaged : false;
+debugLog(`isPackaged: ${isPackaged}`);
+
+// Helper to get the correct path for resources in both dev and packaged app
+function getResourcePath(relativePath) {
+  if (isPackaged) {
+    // In packaged app, resources are in the Resources folder (macOS) or resources folder (Linux/Windows)
+    return path.join(process.resourcesPath, relativePath);
+  }
+  // In development, use the project root
+  return path.join(__dirname, "..", relativePath);
+}
+
+// Helper to get the correct path for dist files
+function getDistPath(relativePath) {
+  if (isPackaged) {
+    // In packaged app, dist files are at the app root
+    return path.join(__dirname, "..", "dist", relativePath);
+  }
+  // In development
+  return path.join(__dirname, "..", "dist", relativePath);
+}
 
 // Suppress security warnings in development (CSP warning is expected due to Vite HMR needing unsafe-eval)
 // These warnings don't appear in production builds
-if (!app.isPackaged) {
+if (!isPackaged) {
   process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = "true";
 }
 
 // electron-store uses ESM, need to use dynamic import
 let store = null;
 async function initStore() {
-  const { default: Store } = await import("electron-store");
-  store = new Store();
+  try {
+    const { default: Store } = await import("electron-store");
+    store = new Store();
+    console.log("[Store] electron-store initialized successfully");
+  } catch (error) {
+    console.error("[Store] Failed to initialize electron-store:", error);
+    // Create a simple fallback store using the file system
+    const storePath = path.join(app.getPath("userData"), "config.json");
+    console.log("[Store] Using fallback file-based store at:", storePath);
+    
+    store = {
+      _data: {},
+      _load() {
+        try {
+          if (fs.existsSync(storePath)) {
+            this._data = JSON.parse(fs.readFileSync(storePath, "utf-8"));
+          }
+        } catch (e) {
+          console.error("[Store] Error loading config:", e);
+          this._data = {};
+        }
+      },
+      _save() {
+        try {
+          fs.writeFileSync(storePath, JSON.stringify(this._data, null, 2));
+        } catch (e) {
+          console.error("[Store] Error saving config:", e);
+        }
+      },
+      get(key, defaultValue) {
+        this._load();
+        return this._data[key] !== undefined ? this._data[key] : defaultValue;
+      },
+      set(key, value) {
+        this._load();
+        this._data[key] = value;
+        this._save();
+      },
+      delete(key) {
+        this._load();
+        delete this._data[key];
+        this._save();
+      }
+    };
+  }
 }
 
 let mainWindow;
@@ -230,20 +332,28 @@ function scanMusicFolder(folderPath, rootPath = folderPath) {
 
 function createTrayIcon() {
   // Create a simple music note icon using nativeImage
-  // For production, you'd want to use proper icon files
-  const iconPath = path.join(__dirname, "../public/icons/icon.svg");
+  // Try multiple icon paths in order of preference
+  const iconPaths = [
+    getResourcePath("icons/16x16.png"),    // Packaged app - extraResources
+    getResourcePath("icons/icon.svg"),      // Packaged app - SVG fallback
+    path.join(__dirname, "../public/icons/16x16.png"),  // Dev - PNG
+    path.join(__dirname, "../public/icons/icon.svg"),   // Dev - SVG fallback
+  ];
   
-  let trayIcon;
+  let trayIcon = nativeImage.createEmpty();
   
-  // Try to load the SVG icon, fall back to creating one if it fails
-  if (fs.existsSync(iconPath)) {
-    // Create a small icon for the tray (16x16 on most platforms)
-    trayIcon = nativeImage.createFromPath(iconPath);
-    // Resize for tray (macOS uses 16x16, Windows uses 16x16 or 32x32)
-    trayIcon = trayIcon.resize({ width: 16, height: 16 });
-  } else {
-    // Create a simple placeholder icon
-    trayIcon = nativeImage.createEmpty();
+  for (const iconPath of iconPaths) {
+    if (fs.existsSync(iconPath)) {
+      trayIcon = nativeImage.createFromPath(iconPath);
+      // Resize for tray (macOS uses 16x16, Windows uses 16x16 or 32x32)
+      trayIcon = trayIcon.resize({ width: 16, height: 16 });
+      console.log("[Tray] Using icon from:", iconPath);
+      break;
+    }
+  }
+  
+  if (trayIcon.isEmpty()) {
+    console.warn("[Tray] No icon found, using empty icon");
   }
   
   return trayIcon;
@@ -379,10 +489,29 @@ function createWindow() {
   console.log("[Electron] Creating window...");
   console.log("[Electron] NODE_ENV:", process.env.NODE_ENV);
   console.log("[Electron] __dirname:", __dirname);
+  console.log("[Electron] isPackaged:", isPackaged);
+  console.log("[Electron] resourcesPath:", process.resourcesPath);
 
   // In development, load from Vite dev server
   // In production, load the built files
-  const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
+  const isDev = process.env.NODE_ENV === "development" || !isPackaged;
+
+  // Find the best available icon
+  const iconPaths = [
+    getResourcePath("icons/512x512.png"),   // Packaged app
+    getResourcePath("icons/icon.svg"),       // Packaged app SVG
+    path.join(__dirname, "../public/icons/512x512.png"),  // Dev
+    path.join(__dirname, "../public/icons/icon.svg"),     // Dev SVG
+  ];
+  
+  let windowIcon = undefined;
+  for (const iconPath of iconPaths) {
+    if (fs.existsSync(iconPath)) {
+      windowIcon = iconPath;
+      console.log("[Electron] Using window icon:", iconPath);
+      break;
+    }
+  }
 
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -390,7 +519,7 @@ function createWindow() {
     minWidth: 800,
     minHeight: 600,
     show: true, // Ensure window is shown
-    icon: path.join(__dirname, "../public/icons/icon.svg"),
+    icon: windowIcon,
     autoHideMenuBar: true, // Hide the menu bar
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -437,14 +566,31 @@ function createWindow() {
     console.log("[Electron] Loading from dev server...");
     mainWindow.loadURL("http://localhost:5173");
   } else {
-    const indexPath = path.join(__dirname, "../dist/index.html");
+    // In packaged app, dist files are bundled with the app
+    // electron-builder puts the files at the app root based on the "files" config
+    const indexPath = path.join(__dirname, "..", "dist", "index.html");
     console.log("[Electron] Loading from file:", indexPath);
+    console.log("[Electron] File exists:", fs.existsSync(indexPath));
+    
+    // Log the directory structure for debugging
+    try {
+      const appRoot = path.join(__dirname, "..");
+      console.log("[Electron] App root contents:", fs.readdirSync(appRoot));
+      const distPath = path.join(appRoot, "dist");
+      if (fs.existsSync(distPath)) {
+        console.log("[Electron] Dist contents:", fs.readdirSync(distPath));
+      }
+    } catch (e) {
+      console.error("[Electron] Error listing directories:", e.message);
+    }
+    
     mainWindow.loadFile(indexPath);
   }
 
   mainWindow.on("closed", () => {
     console.log("[Electron] Window closed");
     mainWindow = null;
+    windowReady = false;
   });
 
   mainWindow.webContents.on(
@@ -456,6 +602,12 @@ function createWindow() {
 
   mainWindow.webContents.on("did-finish-load", () => {
     console.log("[Electron] Page loaded successfully");
+    windowReady = true;
+    
+    // Send any pending files after a short delay to ensure renderer is ready
+    setTimeout(() => {
+      sendPendingFiles();
+    }, 100);
   });
 }
 
@@ -719,7 +871,13 @@ const DEBOUNCE_DELAY = 500; // ms
 // Initialize chokidar (lazy load since it's ESM)
 async function initChokidar() {
   if (!chokidar) {
-    chokidar = await import("chokidar");
+    try {
+      chokidar = await import("chokidar");
+      console.log("[Watcher] chokidar initialized successfully");
+    } catch (error) {
+      console.error("[Watcher] Failed to initialize chokidar:", error);
+      return null;
+    }
   }
   return chokidar;
 }
@@ -781,6 +939,11 @@ ipcMain.handle("library:startWatching", async () => {
   if (!store) return { error: "Store not initialized" };
 
   const chokidarModule = await initChokidar();
+  if (!chokidarModule) {
+    console.warn("[Watcher] chokidar not available, file watching disabled");
+    return { error: "File watching not available", success: false };
+  }
+  
   const folders = store.get("musicFolders", []);
 
   if (folders.length === 0) {
@@ -861,23 +1024,168 @@ ipcMain.handle("library:getWatcherStatus", async () => {
 });
 
 // ============================================
+// File Open Handler (Open With from Finder)
+// ============================================
+
+// Store files that are opened before the window is ready
+let pendingFilesToOpen = [];
+let windowReady = false;
+
+// Handle files opened via "Open With" in Finder (macOS)
+// This event can fire before the app is ready
+app.on("open-file", (event, filePath) => {
+  event.preventDefault();
+  console.log("[OpenFile] File opened:", filePath);
+  
+  // Check if it's an audio file
+  if (isAudioFile(filePath)) {
+    // Always queue the file first
+    pendingFilesToOpen.push(filePath);
+    console.log("[OpenFile] Queued file:", filePath);
+    
+    // If window exists and is ready, send immediately
+    if (windowReady && mainWindow && !mainWindow.isDestroyed()) {
+      console.log("[OpenFile] Sending file to renderer:", filePath);
+      sendPendingFiles();
+      
+      // Focus the window
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    } else if (app.isReady() && (!mainWindow || mainWindow.isDestroyed())) {
+      // App is ready but no window - create one
+      console.log("[OpenFile] Creating window for file open");
+      createWindow();
+    }
+    // If app is not ready yet, whenReady will handle creating the window
+  } else {
+    console.log("[OpenFile] Not an audio file, ignoring:", filePath);
+  }
+});
+
+// Also handle files passed as command line arguments (Windows/Linux)
+function handleCommandLineArgs(argv) {
+  // Skip the first two args (electron executable and app path)
+  const args = argv.slice(isPackaged ? 1 : 2);
+  
+  for (const arg of args) {
+    // Skip flags
+    if (arg.startsWith("-") || arg.startsWith("--")) continue;
+    
+    // Check if it's a file path and an audio file
+    if (fs.existsSync(arg) && isAudioFile(arg)) {
+      console.log("[OpenFile] File from command line:", arg);
+      pendingFilesToOpen.push(arg);
+    }
+  }
+}
+
+// Send pending files to the renderer
+function sendPendingFiles() {
+  if (pendingFilesToOpen.length > 0 && mainWindow && !mainWindow.isDestroyed()) {
+    console.log("[OpenFile] Sending pending files:", pendingFilesToOpen);
+    
+    // Send each file
+    for (const filePath of pendingFilesToOpen) {
+      mainWindow.webContents.send("file:open", filePath);
+    }
+    
+    // Clear the queue
+    pendingFilesToOpen = [];
+  }
+}
+
+// IPC handler for renderer to get pending files
+ipcMain.handle("file:getPendingFiles", async () => {
+  const files = [...pendingFilesToOpen];
+  pendingFilesToOpen = [];
+  return files;
+});
+
+// ============================================
 // App lifecycle
 // ============================================
 
-app.whenReady().then(async () => {
-  // Initialize store first
-  await initStore();
+// Request single instance lock (Windows/Linux)
+// This ensures only one instance of the app runs at a time
+// When a second instance is launched, it will pass its args to the first instance
+const gotTheLock = app.requestSingleInstanceLock();
 
-  createWindow();
-  
-  // Create tray on startup (will be updated when playback starts)
-  createTray();
-
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+if (!gotTheLock) {
+  // Another instance is already running, quit this one
+  console.log("[Electron] Another instance is running, quitting...");
+  app.quit();
+} else {
+  // Handle second-instance event (Windows/Linux)
+  // This fires when user tries to open a file while app is already running
+  app.on("second-instance", (event, commandLine, workingDirectory) => {
+    console.log("[Electron] Second instance detected");
+    console.log("[Electron] Command line:", commandLine);
+    
+    // Extract files from command line arguments
+    // Skip the first args (executable path, app path, flags)
+    for (const arg of commandLine) {
+      // Skip flags and non-file arguments
+      if (arg.startsWith("-") || arg.startsWith("--")) continue;
+      if (arg.includes("electron") || arg.includes("app.asar")) continue;
+      
+      // Check if it's a file path that exists and is an audio file
+      if (fs.existsSync(arg) && isAudioFile(arg)) {
+        console.log("[OpenFile] File from second instance:", arg);
+        
+        if (windowReady && mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send("file:open", arg);
+        } else {
+          pendingFilesToOpen.push(arg);
+        }
+      }
+    }
+    
+    // Focus the existing window
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
     }
   });
+}
+
+app.whenReady().then(async () => {
+  console.log("[Electron] App ready, starting initialization...");
+  console.log("[Electron] App path:", app.getAppPath());
+  console.log("[Electron] User data path:", app.getPath("userData"));
+  console.log("[Electron] Is packaged:", isPackaged);
+  
+  // Handle command line arguments (for files opened via command line)
+  handleCommandLineArgs(process.argv);
+  
+  try {
+    // Initialize store first
+    await initStore();
+
+    createWindow();
+    
+    // Create tray on startup (will be updated when playback starts)
+    createTray();
+
+    app.on("activate", () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow();
+      }
+    });
+    
+    console.log("[Electron] Initialization complete");
+  } catch (error) {
+    console.error("[Electron] Fatal error during initialization:", error);
+    
+    // Show error dialog
+    dialog.showErrorBox(
+      "Failed to start Vinyl Music Player",
+      `An error occurred during startup:\n\n${error.message}\n\nPlease check the logs for more details.`
+    );
+    
+    app.quit();
+  }
 });
 
 app.on("window-all-closed", () => {

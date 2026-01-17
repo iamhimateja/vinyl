@@ -41,6 +41,8 @@ import {
   onTrayPlayPause,
   onTrayNext,
   onTrayPrevious,
+  onFileOpen,
+  getPendingOpenFiles,
 } from "./lib/platform";
 
 import { FirstLaunchWizard } from "./components/FirstLaunchWizard";
@@ -200,6 +202,7 @@ function App() {
   const [showMusicInfoDialog, setShowMusicInfoDialog] = useState(false);
   const [showCommandMenu, setShowCommandMenu] = useState(false);
   const [showKeyboardShortcuts, setShowKeyboardShortcuts] = useState(false);
+  const [autoExpandPlayer, setAutoExpandPlayer] = useState(false);
   const dragCounterRef = useRef(0);
 
   const { settings, updateSetting, resetSettings } = useSettings();
@@ -279,6 +282,7 @@ function App() {
     playPlaylist,
     playFile,
     playFiles,
+    playFilePath,
     togglePlayPause,
     stop,
     playNext,
@@ -424,6 +428,48 @@ function App() {
       unsubPrevious();
     };
   }, [togglePlayPause, playNext, playPrevious]);
+
+  // Listen for files opened via "Open With" from Finder/Explorer
+  useEffect(() => {
+    if (!checkIsDesktop()) return;
+
+    // Handle any files that were opened before the app was ready
+    const handlePendingFiles = async () => {
+      try {
+        const pendingFiles = await getPendingOpenFiles();
+        if (pendingFiles.length > 0) {
+          console.log("[App] Playing pending files:", pendingFiles);
+          // Play the first file
+          const firstFile = pendingFiles[0];
+          await playFilePath(firstFile);
+          // Auto-expand to Now Playing view
+          setAutoExpandPlayer(true);
+        }
+      } catch (error) {
+        console.error("[App] Failed to handle pending files:", error);
+      }
+    };
+
+    // Small delay to ensure player is ready
+    const timeoutId = setTimeout(handlePendingFiles, 500);
+
+    // Listen for new files being opened while the app is running
+    const unsubFileOpen = onFileOpen(async (filePath: string) => {
+      console.log("[App] File opened:", filePath);
+      try {
+        await playFilePath(filePath);
+        // Auto-expand to Now Playing view
+        setAutoExpandPlayer(true);
+      } catch (error) {
+        console.error("[App] Failed to play opened file:", error);
+      }
+    });
+
+    return () => {
+      clearTimeout(timeoutId);
+      unsubFileOpen();
+    };
+  }, [playFilePath]);
 
   // Get current playlist object
   const currentPlaylist =
@@ -1236,6 +1282,8 @@ function App() {
         onToggleFavorite={
           currentSong ? () => toggleFavorite(currentSong.id) : undefined
         }
+        autoExpand={autoExpandPlayer}
+        onAutoExpandHandled={() => setAutoExpandPlayer(false)}
       />
 
       {/* Mobile navigation */}

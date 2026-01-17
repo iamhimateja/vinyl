@@ -1465,6 +1465,124 @@ export function useAudioPlayer(songs: Song[], settings?: AppSettings) {
     }
   }, [playerState.speed]);
 
+  // Play a file from a file path (for desktop "Open With" from Finder/Explorer)
+  const playFilePath = useCallback(async (filePath: string): Promise<Song | null> => {
+    if (!isDesktop()) {
+      console.warn("playFilePath is only supported on desktop");
+      return null;
+    }
+
+    if (!audioRef.current) return null;
+
+    const audio = audioRef.current;
+
+    // Stop and reset current audio
+    audio.pause();
+    audio.currentTime = 0;
+
+    // Revoke previous blob URL
+    if (objectUrlRef.current) {
+      URL.revokeObjectURL(objectUrlRef.current);
+      objectUrlRef.current = null;
+    }
+
+    setPlaybackState("buffering");
+
+    try {
+      // Check if file exists
+      const exists = await fileExists(filePath);
+      if (!exists) {
+        console.error("File does not exist:", filePath);
+        setPlaybackState("idle");
+        return null;
+      }
+
+      // Get the audio URL (reads file and creates blob URL)
+      const audioUrl = await getAssetUrl(filePath);
+      if (!audioUrl) {
+        console.error("Failed to load audio file:", filePath);
+        setPlaybackState("idle");
+        return null;
+      }
+
+      objectUrlRef.current = audioUrl;
+
+      // Extract metadata to create a Song object
+      const fileName = filePath.split('/').pop() || filePath.split('\\').pop() || 'Unknown';
+      
+      // Try to extract metadata
+      let songMetadata: Partial<Song> = {};
+      try {
+        const response = await fetch(audioUrl);
+        const blob = await response.blob();
+        const file = new File([blob], fileName, { type: blob.type });
+        songMetadata = await extractMetadata(file);
+      } catch (metadataError) {
+        console.warn("Could not extract metadata:", metadataError);
+      }
+
+      // Create a song object
+      const song: Song = {
+        id: generateId(),
+        title: songMetadata.title || fileName.replace(/\.[^/.]+$/, ""),
+        artist: songMetadata.artist || "Unknown Artist",
+        album: songMetadata.album || "Unknown Album",
+        duration: songMetadata.duration || 0,
+        filePath: filePath,
+        coverArt: songMetadata.coverArt,
+        sourceType: "local",
+        addedAt: Date.now(),
+        fileName: fileName,
+      };
+
+      // Store in quick play songs
+      quickPlaySongsRef.current.set(song.id, song);
+
+      // Set up audio source
+      audio.src = audioUrl;
+      audio.playbackRate = playerState.speed;
+
+      // Update state
+      setPlayerState((prev) => ({
+        ...prev,
+        currentSongId: song.id,
+        isPlaying: true,
+        queue: [song.id],
+        queueIndex: 0,
+        currentPlaylistId: null,
+      }));
+
+      // Wait for audio to be loaded
+      await new Promise<void>((resolve, reject) => {
+        const onCanPlay = () => {
+          audio.removeEventListener("canplay", onCanPlay);
+          audio.removeEventListener("error", onError);
+          resolve();
+        };
+        const onError = () => {
+          audio.removeEventListener("canplay", onCanPlay);
+          audio.removeEventListener("error", onError);
+          reject(new Error("Audio failed to load"));
+        };
+        audio.addEventListener("canplay", onCanPlay);
+        audio.addEventListener("error", onError);
+        audio.load();
+      });
+
+      // Start playing
+      await audio.play();
+      setPlaybackState("playing");
+
+      console.log("[PlayFilePath] Now playing:", song.title);
+      return song;
+    } catch (error) {
+      console.error("playFilePath failed:", error);
+      setPlaybackState("idle");
+      setPlayerState((prev) => ({ ...prev, isPlaying: false }));
+      return null;
+    }
+  }, [playerState.speed]);
+
   // Get current song - check quick play songs first, then library songs
   const currentSong = playerState.currentSongId
     ? (quickPlaySongsRef.current.get(playerState.currentSongId) || 
@@ -1502,6 +1620,7 @@ export function useAudioPlayer(songs: Song[], settings?: AppSettings) {
     playPlaylist,
     playFile,
     playFiles,
+    playFilePath,
     togglePlayPause,
     stop,
     playNext,

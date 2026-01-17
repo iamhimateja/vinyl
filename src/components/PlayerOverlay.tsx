@@ -44,6 +44,9 @@ interface PlayerOverlayProps {
   currentPlaylist: Playlist | null;
   showAlbumArt: boolean;
   isFavorite?: boolean;
+  // Auto-expand to Now Playing view (e.g., when file opened from Finder)
+  autoExpand?: boolean;
+  onAutoExpandHandled?: () => void;
   // Equalizer props
   eqBands: EqualizerBand[];
   eqEnabled: boolean;
@@ -895,6 +898,8 @@ export function PlayerOverlay({
   onDeleteFromQueue,
   onReorderQueue,
   onToggleFavorite,
+  autoExpand,
+  onAutoExpandHandled,
 }: PlayerOverlayProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
@@ -904,6 +909,16 @@ export function PlayerOverlay({
   const location = useLocation();
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+
+  // Auto-expand when file is opened from Finder/Explorer
+  useEffect(() => {
+    if (autoExpand && currentSong && !isExpanded) {
+      setIsClosing(false);
+      setIsExpanded(true);
+      // Notify parent that we handled the auto-expand
+      onAutoExpandHandled?.();
+    }
+  }, [autoExpand, currentSong, isExpanded, onAutoExpandHandled]);
 
   // Collapse expanded player when route changes
   useEffect(() => {

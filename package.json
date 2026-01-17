@@ -59,11 +59,32 @@
     "directories": {
       "output": "dist-electron"
     },
+    "asar": true,
+    "compression": "maximum",
     "files": [
       "dist/**/*",
       "electron/**/*",
-      "!node_modules",
-      "node_modules/electron-store/**/*"
+      "!node_modules/**/*",
+      "node_modules/electron-store/**/*",
+      "node_modules/conf/**/*",
+      "node_modules/chokidar/**/*",
+      "node_modules/env-paths/**/*",
+      "node_modules/atomically/**/*",
+      "node_modules/stubborn-fs/**/*",
+      "node_modules/stubborn-utils/**/*",
+      "node_modules/when-exit/**/*",
+      "node_modules/debounce-fn/**/*",
+      "node_modules/mimic-function/**/*",
+      "node_modules/readdirp/**/*",
+      "node_modules/type-fest/**/*",
+      "node_modules/ajv/**/*",
+      "node_modules/ajv-formats/**/*",
+      "node_modules/json-schema-typed/**/*",
+      "node_modules/fast-deep-equal/**/*",
+      "node_modules/fast-uri/**/*",
+      "node_modules/require-from-string/**/*",
+      "node_modules/json-schema-traverse/**/*",
+      "node_modules/semver/**/*"
     ],
     "extraResources": [
       {
@@ -73,24 +94,149 @@
     ],
     "linux": {
       "target": [
-        "AppImage",
-        "deb"
+        { "target": "AppImage", "arch": ["x64"] }
       ],
       "category": "Audio",
-      "icon": "public/icons"
+      "icon": "public/icons",
+      "mimeTypes": [
+        "audio/mpeg",
+        "audio/mp4",
+        "audio/flac",
+        "audio/ogg",
+        "audio/wav",
+        "audio/aac",
+        "audio/aiff",
+        "audio/opus",
+        "audio/x-ms-wma",
+        "audio/webm"
+      ]
     },
     "mac": {
       "target": [
-        "dmg",
-        "zip"
+        { "target": "dmg", "arch": ["arm64"] },
+        { "target": "zip", "arch": ["arm64"] }
       ],
       "category": "public.app-category.music",
-      "icon": "public/icons"
+      "icon": "public/icons/512x512.png",
+      "extendInfo": {
+        "CFBundleDocumentTypes": [
+          {
+            "CFBundleTypeName": "Audio File",
+            "CFBundleTypeRole": "Viewer",
+            "LSHandlerRank": "Alternate",
+            "LSItemContentTypes": [
+              "public.mp3",
+              "public.mpeg-4-audio",
+              "com.apple.m4a-audio",
+              "public.aiff-audio",
+              "com.microsoft.waveform-audio",
+              "org.xiph.flac",
+              "org.xiph.ogg-audio",
+              "public.aac-audio",
+              "com.microsoft.windows-media-wma",
+              "org.xiph.opus"
+            ]
+          }
+        ],
+        "UTImportedTypeDeclarations": [
+          {
+            "UTTypeIdentifier": "org.xiph.flac",
+            "UTTypeDescription": "FLAC Audio",
+            "UTTypeConformsTo": ["public.audio"],
+            "UTTypeTagSpecification": {
+              "public.filename-extension": ["flac"]
+            }
+          },
+          {
+            "UTTypeIdentifier": "org.xiph.ogg-audio",
+            "UTTypeDescription": "Ogg Audio",
+            "UTTypeConformsTo": ["public.audio"],
+            "UTTypeTagSpecification": {
+              "public.filename-extension": ["ogg"]
+            }
+          },
+          {
+            "UTTypeIdentifier": "org.xiph.opus",
+            "UTTypeDescription": "Opus Audio",
+            "UTTypeConformsTo": ["public.audio"],
+            "UTTypeTagSpecification": {
+              "public.filename-extension": ["opus"]
+            }
+          }
+        ]
+      }
     },
+    "fileAssociations": [
+      {
+        "ext": "mp3",
+        "name": "MP3 Audio",
+        "role": "Viewer",
+        "mimeType": "audio/mpeg"
+      },
+      {
+        "ext": "wav",
+        "name": "WAV Audio",
+        "role": "Viewer",
+        "mimeType": "audio/wav"
+      },
+      {
+        "ext": "flac",
+        "name": "FLAC Audio",
+        "role": "Viewer",
+        "mimeType": "audio/flac"
+      },
+      {
+        "ext": "ogg",
+        "name": "Ogg Audio",
+        "role": "Viewer",
+        "mimeType": "audio/ogg"
+      },
+      {
+        "ext": "m4a",
+        "name": "M4A Audio",
+        "role": "Viewer",
+        "mimeType": "audio/mp4"
+      },
+      {
+        "ext": "aac",
+        "name": "AAC Audio",
+        "role": "Viewer",
+        "mimeType": "audio/aac"
+      },
+      {
+        "ext": "aiff",
+        "name": "AIFF Audio",
+        "role": "Viewer",
+        "mimeType": "audio/aiff"
+      },
+      {
+        "ext": "opus",
+        "name": "Opus Audio",
+        "role": "Viewer",
+        "mimeType": "audio/opus"
+      },
+      {
+        "ext": "wma",
+        "name": "WMA Audio",
+        "role": "Viewer",
+        "mimeType": "audio/x-ms-wma"
+      },
+      {
+        "ext": "ape",
+        "name": "APE Audio",
+        "role": "Viewer",
+        "mimeType": "audio/ape"
+      },
+      {
+        "ext": "webm",
+        "name": "WebM Audio",
+        "role": "Viewer",
+        "mimeType": "audio/webm"
+      }
+    ],
     "win": {
       "target": [
-        "nsis",
-        "portable"
+        { "target": "nsis", "arch": ["x64"] }
       ],
       "icon": "public/icons"
     }

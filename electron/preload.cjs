@@ -101,6 +101,19 @@ contextBridge.exposeInMainWorld("electron", {
       return () => ipcRenderer.removeListener("tray:previous", handler);
     },
   },
+
+  // File Open APIs (for "Open With" from Finder/Explorer)
+  fileOpen: {
+    // Get any files that were opened before the renderer was ready
+    getPendingFiles: () => ipcRenderer.invoke("file:getPendingFiles"),
+    
+    // Listen for files being opened while the app is running
+    onFileOpen: (callback) => {
+      const handler = (_event, filePath) => callback(filePath);
+      ipcRenderer.on("file:open", handler);
+      return () => ipcRenderer.removeListener("file:open", handler);
+    },
+  },
 });
 
 // Log when preload is complete
