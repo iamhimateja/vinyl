@@ -41,7 +41,7 @@ export function GeneratorControls({
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentGenre, setCurrentGenre] = useState<Genre>("lofi");
   const [tempo, setTempo] = useState(75);
-  const [tempoRange, setTempoRange] = useState({ min: 60, max: 90 });
+  const [tempoRange, setTempoRange] = useState({ min: 60, max: 140 });
   const [currentStep, setCurrentStep] = useState(0);
   const [currentBar, setCurrentBar] = useState(0);
   const [effects, setEffects] = useState<EffectsState>({

@@ -128,13 +128,13 @@ const MELODIES = [
 ];
 
 const CONFIG: Record<Genre, { tempo: { min: number; max: number; def: number }; swing: number; base: number }> = {
-  lofi: { tempo: { min: 65, max: 90, def: 75 }, swing: 0.12, base: 48 },
-  techno: { tempo: { min: 125, max: 145, def: 132 }, swing: 0, base: 36 },
-  "80s-synth": { tempo: { min: 105, max: 125, def: 118 }, swing: 0.02, base: 48 },
-  ambient: { tempo: { min: 60, max: 80, def: 70 }, swing: 0, base: 48 },
-  house: { tempo: { min: 118, max: 130, def: 124 }, swing: 0.05, base: 48 },
-  dnb: { tempo: { min: 160, max: 180, def: 174 }, swing: 0, base: 36 },
-  trap: { tempo: { min: 130, max: 160, def: 140 }, swing: 0, base: 36 },
+  lofi: { tempo: { min: 60, max: 140, def: 75 }, swing: 0.12, base: 48 },
+  techno: { tempo: { min: 60, max: 180, def: 132 }, swing: 0, base: 36 },
+  "80s-synth": { tempo: { min: 60, max: 140, def: 118 }, swing: 0.02, base: 48 },
+  ambient: { tempo: { min: 40, max: 120, def: 70 }, swing: 0, base: 48 },
+  house: { tempo: { min: 60, max: 140, def: 124 }, swing: 0.05, base: 48 },
+  dnb: { tempo: { min: 140, max: 200, def: 174 }, swing: 0, base: 36 },
+  trap: { tempo: { min: 80, max: 180, def: 140 }, swing: 0, base: 36 },
 };
 
 function parse(s: string): number[] { return s.split("").map(c => c === "x" ? 1 : 0); }
