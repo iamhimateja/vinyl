@@ -365,19 +365,31 @@ function App() {
     onSeekForward: () => seek(Math.min(duration, currentTime + 5)),
     onSeekBackward: () => seek(Math.max(0, currentTime - 5)),
     onCycleVisualizer: () => {
-      const currentIndex = visualizerStyles.indexOf(settings.visualizerStyle);
-      const nextIndex = (currentIndex + 1) % visualizerStyles.length;
-      const nextStyle = visualizerStyles[nextIndex];
-      if (!settings.visualizerEnabled) updateSetting("visualizerEnabled", true);
-      updateSetting("visualizerStyle", nextStyle);
       const styleNames = { bars: "Bars", wave: "Wave", areaWave: "Area Wave" };
-      toast.success(`Visualizer: ${styleNames[nextStyle]}`, { duration: 1500 });
+      
+      if (!settings.visualizerEnabled) {
+        // Turn on with current style
+        updateSetting("visualizerEnabled", true);
+        toast.success(`Visualizer: ${styleNames[settings.visualizerStyle]}`, { duration: 1500 });
+      } else {
+        // Cycle through styles, turn off after last
+        const currentIndex = visualizerStyles.indexOf(settings.visualizerStyle);
+        if (currentIndex === visualizerStyles.length - 1) {
+          // At last style, turn off
+          updateSetting("visualizerEnabled", false);
+          toast.success("Visualizer off", { duration: 1500 });
+        } else {
+          // Cycle to next style
+          const nextStyle = visualizerStyles[currentIndex + 1];
+          updateSetting("visualizerStyle", nextStyle);
+          toast.success(`Visualizer: ${styleNames[nextStyle]}`, { duration: 1500 });
+        }
+      }
     },
     onToggleVisualizerOff: () => {
-      if (settings.visualizerEnabled) {
-        updateSetting("visualizerEnabled", false);
-        toast.success("Visualizer off", { duration: 1500 });
-      }
+      // Double-press toggles on/off
+      updateSetting("visualizerEnabled", !settings.visualizerEnabled);
+      toast.success(settings.visualizerEnabled ? "Visualizer off" : "Visualizer on", { duration: 1500 });
     },
     onToggleMusicInfo: () => setShowMusicInfoDialog(prev => !prev),
     onToggleEqualizer: () => {
@@ -1418,13 +1430,6 @@ function App() {
         visualizerStyle={settings.visualizerStyle}
         frequencyData={frequencyData}
         waveformData={waveformData}
-        onVisualizerToggle={() => {
-          updateSetting("visualizerEnabled", !settings.visualizerEnabled);
-          toast.success(settings.visualizerEnabled ? "Visualizer off" : "Visualizer on", { duration: 1500 });
-        }}
-        onVisualizerStyleChange={(style) =>
-          updateSetting("visualizerStyle", style)
-        }
         onTogglePlayPause={togglePlayPause}
         onNext={playNext}
         onPrevious={playPrevious}

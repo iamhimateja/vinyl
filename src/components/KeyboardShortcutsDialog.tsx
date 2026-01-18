@@ -49,8 +49,8 @@ const shortcutGroups: ShortcutGroup[] = [
   {
     title: "Visualizer",
     shortcuts: [
-      { key: "V", description: "Cycle visualizer style" },
-      { key: "V V", description: "Turn off visualizer" },
+      { key: "V", description: "On → cycle styles → off" },
+      { key: "V V", description: "Toggle on/off" },
     ],
   },
   {

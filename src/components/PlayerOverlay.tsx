@@ -27,7 +27,6 @@ import { PlayerControls } from "./PlayerControls";
 import { DraggableQueueList } from "./DraggableQueueList";
 import { Equalizer } from "./Equalizer";
 import { SleepTimer } from "./SleepTimer";
-import { VisualizerToggle } from "./VisualizerStylePicker";
 import { AudioVisualizer } from "./AudioVisualizer";
 import { tooltipProps } from "./Tooltip";
 import { ScrollArea } from "./ui";
@@ -77,8 +76,6 @@ interface PlayerOverlayProps {
   visualizerStyle: VisualizerStyle;
   frequencyData: Uint8Array;
   waveformData: Uint8Array;
-  onVisualizerToggle: () => void;
-  onVisualizerStyleChange: (style: VisualizerStyle) => void;
   // Player callbacks
   onTogglePlayPause: () => void;
   onNext: () => void;
@@ -282,8 +279,6 @@ function ExpandedPlayer({
   visualizerStyle,
   frequencyData,
   waveformData,
-  onVisualizerToggle,
-  onVisualizerStyleChange,
   onCollapse,
   onToggleQueue,
   onCloseQueue,
@@ -345,8 +340,6 @@ function ExpandedPlayer({
   visualizerStyle: VisualizerStyle;
   frequencyData: Uint8Array;
   waveformData: Uint8Array;
-  onVisualizerToggle: () => void;
-  onVisualizerStyleChange: (style: VisualizerStyle) => void;
   onCollapse: () => void;
   onToggleQueue: () => void;
   onCloseQueue: () => void;
@@ -550,13 +543,6 @@ function ExpandedPlayer({
             onStart={onSleepTimerStart}
             onStop={onSleepTimerStop}
             onAddTime={onSleepTimerAddTime}
-          />
-          {/* Visualizer Toggle */}
-          <VisualizerToggle
-            enabled={visualizerEnabled}
-            currentStyle={visualizerStyle}
-            onToggle={onVisualizerToggle}
-            onStyleChange={onVisualizerStyleChange}
           />
           <button
             onClick={() => {
@@ -975,8 +961,6 @@ export function PlayerOverlay({
   visualizerStyle,
   frequencyData,
   waveformData,
-  onVisualizerToggle,
-  onVisualizerStyleChange,
   onTogglePlayPause,
   onNext,
   onPrevious,
@@ -1110,8 +1094,6 @@ export function PlayerOverlay({
           visualizerStyle={visualizerStyle}
           frequencyData={frequencyData}
           waveformData={waveformData}
-          onVisualizerToggle={onVisualizerToggle}
-          onVisualizerStyleChange={onVisualizerStyleChange}
           onCollapse={handleCollapse}
           onToggleQueue={() => {
             setShowEqualizer(false);
