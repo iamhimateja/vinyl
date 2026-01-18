@@ -25,6 +25,8 @@ interface GeneratorControlsProps {
   onVisualizerData?: (frequencyData: Uint8Array, waveformData: Uint8Array) => void;
   // Callback when playing state changes
   onPlayingChange?: (isPlaying: boolean) => void;
+  // Callback when tempo changes
+  onTempoChange?: (tempo: number) => void;
 }
 
 export function GeneratorControls({
@@ -32,6 +34,7 @@ export function GeneratorControls({
   onRegisterStop,
   onVisualizerData,
   onPlayingChange,
+  onTempoChange,
 }: GeneratorControlsProps) {
   const generatorRef = useRef<MusicGenerator | null>(null);
   const animationRef = useRef<number | null>(null);
@@ -112,18 +115,21 @@ export function GeneratorControls({
     if (generatorRef.current) {
       generatorRef.current.setGenre(genre);
       setCurrentGenre(genre);
-      setTempo(generatorRef.current.getTempo());
+      const newTempo = generatorRef.current.getTempo();
+      setTempo(newTempo);
       setTempoRange(generatorRef.current.getTempoRange());
+      onTempoChange?.(newTempo);
     }
     setShowGenreMenu(false);
-  }, []);
+  }, [onTempoChange]);
 
   const handleTempoChange = useCallback((newTempo: number) => {
     if (generatorRef.current) {
       generatorRef.current.setTempo(newTempo);
       setTempo(newTempo);
+      onTempoChange?.(newTempo);
     }
-  }, []);
+  }, [onTempoChange]);
 
   const handlePlay = useCallback(() => {
     if (generatorRef.current) {

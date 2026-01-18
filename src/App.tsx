@@ -16,7 +16,6 @@ import { AboutView } from "./components/AboutView";
 import { SettingsView } from "./components/SettingsView";
 import { PlayerOverlay } from "./components/PlayerOverlay";
 import { TopNav } from "./components/TopNav";
-import { MusicGeneratorView } from "./components/MusicGeneratorView";
 import { QuickPlayOverlay, DropZoneOverlay } from "./components/QuickPlayOverlay";
 import { MusicInfoDialog } from "./components/MusicInfoDialog";
 import { CommandMenu } from "./components/CommandMenu";
@@ -1197,18 +1196,6 @@ function App() {
     }
   }, [isPlaying]);
 
-  const generatorPage = useMemo(
-    () => (
-      <ScrollArea className="flex-1 pt-16 pb-24 md:pb-20">
-        <MusicGeneratorView
-          onGeneratorPlay={handleGeneratorPlay}
-          onRegisterStop={handleRegisterGeneratorStop}
-        />
-      </ScrollArea>
-    ),
-    [handleGeneratorPlay, handleRegisterGeneratorStop],
-  );
-
   // Handle library import - wrapper to convert MusicFileInfo to the import format
   const handleLibraryImport = useCallback(
     async (
@@ -1372,7 +1359,6 @@ function App() {
               />
             }
           />
-          <Route path="/generator" element={generatorPage} />
           <Route path="/settings" element={settingsPage} />
           <Route path="/about" element={aboutPage} />
         </Routes>
