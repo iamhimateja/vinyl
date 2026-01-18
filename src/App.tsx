@@ -46,6 +46,7 @@ import {
 } from "./lib/platform";
 
 import { FirstLaunchWizard } from "./components/FirstLaunchWizard";
+import { ScrollArea } from "./components/ui";
 import type { Playlist, Song } from "./types";
 import {
   ArrowLeft,
@@ -949,6 +950,7 @@ function App() {
               onDelete={handleDeleteSong}
               playlists={playlists}
               onAddToPlaylist={addSongToPlaylist}
+              onCreatePlaylist={createPlaylist}
               unavailableSongIds={unavailableSongIds}
               onDeleteSong={handleDeleteSong}
               favoriteSongIds={favoriteSongIds}
@@ -977,13 +979,18 @@ function App() {
       stop,
       handleDeleteSong,
       addSongToPlaylist,
+      createPlaylist,
+      favoriteSongIds,
+      toggleFavorite,
+      settings.skipDeleteConfirmation,
+      handleSkipDeleteConfirmationChange,
     ],
   );
 
   const playlistsPage = useMemo(
     () => (
       <div className="flex-1 flex flex-col p-6 pt-16 pb-24 md:pb-20 h-full overflow-hidden">
-        <div className="flex-1 overflow-auto">
+        <ScrollArea className="flex-1">
           <PlaylistView
             playlists={playlists}
             songs={songs}
@@ -1002,7 +1009,7 @@ function App() {
             }}
             onStopPlaylist={stop}
           />
-        </div>
+        </ScrollArea>
       </div>
     ),
     [
@@ -1044,12 +1051,12 @@ function App() {
 
   const generatorPage = useMemo(
     () => (
-      <div className="flex-1 overflow-auto pt-16 pb-24 md:pb-20">
+      <ScrollArea className="flex-1 pt-16 pb-24 md:pb-20">
         <MusicGeneratorView
           onGeneratorPlay={handleGeneratorPlay}
           onRegisterStop={handleRegisterGeneratorStop}
         />
-      </div>
+      </ScrollArea>
     ),
     [handleGeneratorPlay, handleRegisterGeneratorStop],
   );
@@ -1071,7 +1078,7 @@ function App() {
 
   const settingsPage = useMemo(
     () => (
-      <div className="flex-1 overflow-auto pt-16 pb-24 md:pb-20">
+      <ScrollArea className="flex-1 pt-16 pb-24 md:pb-20">
         <SettingsView
           settings={settings}
           onUpdateSetting={updateSetting}
@@ -1101,7 +1108,7 @@ function App() {
           onLibraryImportFiles={handleLibraryImport}
           onLibraryClearError={library.clearError}
         />
-      </div>
+      </ScrollArea>
     ),
     [
       settings,
@@ -1134,9 +1141,9 @@ function App() {
 
   const aboutPage = useMemo(
     () => (
-      <div className="flex-1 overflow-auto pt-16 pb-24 md:pb-20">
+      <ScrollArea className="flex-1 pt-16 pb-24 md:pb-20">
         <AboutView />
-      </div>
+      </ScrollArea>
     ),
     [],
   );
