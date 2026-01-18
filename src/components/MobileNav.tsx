@@ -1,10 +1,9 @@
 import { NavLink } from "react-router-dom";
-import { ListMusic, Music, Settings, Wand2 } from "lucide-react";
+import { ListMusic, Music, Settings } from "lucide-react";
 
 const navItems = [
   { to: "/library", icon: Music, label: "Library" },
   { to: "/playlists", icon: ListMusic, label: "Playlists" },
-  { to: "/generator", icon: Wand2, label: "Generate", badge: "Beta" },
   { to: "/settings", icon: Settings, label: "Settings" },
 ];
 
@@ -22,14 +21,7 @@ export function MobileNav() {
               }`
             }
           >
-            <div className="relative">
-              <item.icon className="w-6 h-6" />
-              {item.badge && (
-                <span className="absolute -top-1 -right-2 text-[8px] px-1 py-0.5 bg-vinyl-accent text-vinyl-bg rounded font-bold">
-                  {item.badge}
-                </span>
-              )}
-            </div>
+            <item.icon className="w-6 h-6" />
             <span className="text-xs">{item.label}</span>
           </NavLink>
         ))}

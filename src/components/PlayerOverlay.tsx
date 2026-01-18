@@ -373,6 +373,7 @@ function ExpandedPlayer({
   const [showInfo, setShowInfo] = useState(false);
   const [showGenerator, setShowGenerator] = useState(false);
   const [generatorPlaying, setGeneratorPlaying] = useState(false);
+  const [generatorTempo, setGeneratorTempo] = useState(75);
   const [generatorFreqData, setGeneratorFreqData] = useState<Uint8Array>(new Uint8Array(128));
   const [generatorWaveData, setGeneratorWaveData] = useState<Uint8Array>(new Uint8Array(256));
   const startY = useRef<number | null>(null);
@@ -387,10 +388,18 @@ function ExpandedPlayer({
     setGeneratorPlaying(playing);
   };
   
+  const handleGeneratorTempoChange = (tempo: number) => {
+    setGeneratorTempo(tempo);
+  };
+  
   // Use generator data for visualizer when generator is playing
   const activeFrequencyData = generatorPlaying ? generatorFreqData : frequencyData;
   const activeWaveformData = generatorPlaying ? generatorWaveData : waveformData;
   const visualizerActive = isPlaying || generatorPlaying;
+  
+  // Calculate speed for vinyl based on generator tempo (120 BPM = 1x speed)
+  const effectiveSpeed = generatorPlaying ? generatorTempo / 120 : speed;
+  const effectivePlaybackState = generatorPlaying ? "playing" : playbackState;
 
   const handleTouchStart = (e: React.TouchEvent) => {
     startY.current = e.touches[0].clientY;
@@ -535,15 +544,20 @@ function ExpandedPlayer({
           />
           <button
             onClick={() => {
-              setShowInfo(false);
-              onToggleEqualizer();
+              if (!showGenerator) {
+                setShowInfo(false);
+                onToggleEqualizer();
+              }
             }}
+            disabled={showGenerator}
             className={`p-2 rounded-full transition-colors ${
-              showEqualizer
-                ? "text-vinyl-accent bg-vinyl-accent/20"
-                : "text-vinyl-text-muted hover:text-vinyl-text hover:bg-vinyl-surface/50"
+              showGenerator
+                ? "text-vinyl-text-muted/30 cursor-not-allowed"
+                : showEqualizer
+                  ? "text-vinyl-accent bg-vinyl-accent/20"
+                  : "text-vinyl-text-muted hover:text-vinyl-text hover:bg-vinyl-surface/50"
             }`}
-            {...tooltipProps("Equalizer")}
+            {...tooltipProps(showGenerator ? "Equalizer (disabled for generator)" : "Equalizer")}
           >
             <SlidersHorizontal className="w-6 h-6" />
           </button>
@@ -596,8 +610,8 @@ function ExpandedPlayer({
             <VinylPlayer
               currentSong={currentSong}
               isPlaying={isPlaying || generatorPlaying}
-              playbackState={playbackState}
-              speed={speed}
+              playbackState={effectivePlaybackState}
+              speed={effectiveSpeed}
               showAlbumArt={showAlbumArt}
             />
           )}
@@ -605,7 +619,7 @@ function ExpandedPlayer({
           {/* Album Art Only */}
           {displayMode === "albumArt" && (
             <div className="w-64 h-64 md:w-80 md:h-80 rounded-2xl overflow-hidden shadow-2xl bg-vinyl-surface">
-              {currentSong.coverArt ? (
+              {currentSong.coverArt && !showGenerator ? (
                 <img
                   src={currentSong.coverArt}
                   alt={currentSong.title}
@@ -614,8 +628,12 @@ function ExpandedPlayer({
                   }`}
                 />
               ) : (
-                <div className="w-full h-full flex items-center justify-center bg-vinyl-border">
-                  <Music className="w-24 h-24 text-vinyl-text-muted" />
+                <div className={`w-full h-full flex items-center justify-center bg-vinyl-border ${generatorPlaying ? "animate-pulse" : ""}`}>
+                  {showGenerator ? (
+                    <Wand2 className="w-24 h-24 text-vinyl-accent" />
+                  ) : (
+                    <Music className="w-24 h-24 text-vinyl-text-muted" />
+                  )}
                 </div>
               )}
             </div>
@@ -625,7 +643,7 @@ function ExpandedPlayer({
         {/* Song info and controls */}
         <div className="relative z-[2] w-full max-w-2xl mx-auto space-y-4 flex-shrink-0 px-6 pb-6">
           {/* Show song info only when generator is not playing */}
-          {!generatorPlaying && <NowPlaying song={currentSong} />}
+          {!showGenerator && <NowPlaying song={currentSong} />}
           
           {/* Generator Controls - shown when toggle is on */}
           {showGenerator && (
@@ -635,12 +653,13 @@ function ExpandedPlayer({
                 onRegisterStop={onRegisterGeneratorStop}
                 onVisualizerData={handleGeneratorVisualizerData}
                 onPlayingChange={handleGeneratorPlayingChange}
+                onTempoChange={handleGeneratorTempoChange}
               />
             </div>
           )}
           
           {/* Show player controls only when generator is not playing */}
-          {!generatorPlaying && (
+          {!showGenerator && (
             <PlayerControls
               isPlaying={isPlaying}
               currentTime={currentTime}
