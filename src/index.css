@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "overlayscrollbars/overlayscrollbars.css";
 
 /* shadcn/ui animation utilities for Tailwind v4 */
 @keyframes accordion-down {
@@ -302,22 +303,88 @@ html.electron [contenteditable="true"] {
   animation: pulse-glow 2s ease-in-out infinite;
 }
 
-/* Custom scrollbar */
+/* OverlayScrollbars Custom Theme - Vinyl */
+.os-theme-vinyl {
+  --os-size: 10px;
+  --os-padding-perpendicular: 2px;
+  --os-padding-axis: 2px;
+  --os-track-border-radius: 5px;
+  --os-handle-border-radius: 5px;
+  --os-handle-bg: var(--vinyl-border);
+  --os-handle-bg-hover: var(--vinyl-accent);
+  --os-handle-bg-active: var(--vinyl-accent);
+}
+
+.os-theme-vinyl > .os-scrollbar {
+  transition: opacity 0.3s, visibility 0.3s;
+}
+
+.os-theme-vinyl > .os-scrollbar-vertical {
+  width: var(--os-size);
+  padding: var(--os-padding-axis) var(--os-padding-perpendicular);
+}
+
+.os-theme-vinyl > .os-scrollbar-horizontal {
+  height: var(--os-size);
+  padding: var(--os-padding-perpendicular) var(--os-padding-axis);
+}
+
+.os-theme-vinyl > .os-scrollbar > .os-scrollbar-track {
+  background: transparent;
+  border-radius: var(--os-track-border-radius);
+}
+
+.os-theme-vinyl > .os-scrollbar > .os-scrollbar-track > .os-scrollbar-handle {
+  background: var(--os-handle-bg);
+  border-radius: var(--os-handle-border-radius);
+  transition: background 0.2s ease;
+}
+
+.os-theme-vinyl > .os-scrollbar:hover > .os-scrollbar-track > .os-scrollbar-handle {
+  background: var(--os-handle-bg-hover);
+}
+
+.os-theme-vinyl > .os-scrollbar > .os-scrollbar-track > .os-scrollbar-handle:active,
+.os-theme-vinyl > .os-scrollbar > .os-scrollbar-track > .os-scrollbar-handle.active {
+  background: var(--os-handle-bg-active);
+}
+
+/* Auto-hide animation */
+.os-theme-vinyl > .os-scrollbar-auto-hide.os-scrollbar-auto-hide-hidden {
+  opacity: 0;
+  visibility: hidden;
+}
+
+/* Light theme scrollbar adjustments */
+.light .os-theme-vinyl {
+  --os-handle-bg: rgba(0, 0, 0, 0.2);
+  --os-handle-bg-hover: var(--vinyl-accent);
+  --os-handle-bg-active: var(--vinyl-accent);
+}
+
+/* Fallback scrollbar for non-ScrollArea elements */
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--vinyl-surface);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
   background: var(--vinyl-border);
-  border-radius: 3px;
+  border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--vinyl-accent);
+}
+
+/* Firefox scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--vinyl-border) transparent;
 }
 
 /* Range input styling - Progress Slider */

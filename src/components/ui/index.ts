@@ -4,3 +4,5 @@ export * from "./alert-dialog";
 export * from "./dialog";
 export * from "./tooltip";
 export * from "./sonner";
+export * from "./scrollarea";
+export * from "./popover";

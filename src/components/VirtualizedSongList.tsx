@@ -1,18 +1,20 @@
 import { useRef, useState, useEffect, memo, useCallback } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { useOverlayScrollbars } from "overlayscrollbars-react";
 import {
   Music,
   Trash2,
   Play,
   Pause,
   Square,
-  ListPlus,
   AlertTriangle,
   Heart,
+  ListPlus,
 } from "lucide-react";
 import type { Song, Playlist } from "../types";
 import { formatDuration } from "../lib/audioMetadata";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { AddToPlaylistPopover } from "./AddToPlaylistPopover";
 import { tooltipProps } from "./Tooltip";
 
 interface VirtualizedSongListProps {
@@ -25,7 +27,8 @@ interface VirtualizedSongListProps {
   onDelete: (songId: string) => void;
   compact?: boolean;
   playlists?: Playlist[];
-  onAddToPlaylist?: (songId: string, playlistId: string) => void;
+  onAddToPlaylist?: (playlistId: string, songId: string) => void;
+  onCreatePlaylist?: (name: string) => Promise<string | void>;
   unavailableSongIds?: Set<string>;
   onDeleteSong?: (songId: string) => void;
   favoriteSongIds?: Set<string>;
@@ -45,12 +48,11 @@ interface SongRowProps {
   isFavorite: boolean;
   compact: boolean;
   playlists: Playlist[];
-  showPlaylistMenu: boolean;
   onPlay: (song: Song) => void;
   onTogglePlayPause?: () => void;
   onStop?: () => void;
-  onAddToPlaylist?: (songId: string, playlistId: string) => void;
-  onTogglePlaylistMenu: (songId: string | null) => void;
+  onAddToPlaylist?: (playlistId: string, songId: string) => void;
+  onCreatePlaylist?: (name: string) => Promise<string | void>;
   onToggleFavorite?: (songId: string) => void;
   onShowDeleteDialog: (songId: string) => void;
 }
@@ -64,12 +66,11 @@ const SongRow = memo(function SongRow({
   isFavorite,
   compact,
   playlists,
-  showPlaylistMenu,
   onPlay,
   onTogglePlayPause,
   onStop,
   onAddToPlaylist,
-  onTogglePlaylistMenu,
+  onCreatePlaylist,
   onToggleFavorite,
   onShowDeleteDialog,
 }: SongRowProps) {
@@ -268,18 +269,23 @@ const SongRow = memo(function SongRow({
           </button>
         )}
 
-        {/* Add to playlist button */}
-        {!compact && onAddToPlaylist && playlists.length > 0 && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onTogglePlaylistMenu(showPlaylistMenu ? null : song.id);
-            }}
-            className="p-2 rounded-full hover:bg-vinyl-border transition-colors text-vinyl-text-muted hover:text-vinyl-accent"
-            {...tooltipProps("Add to playlist")}
-          >
-            <ListPlus className="w-4 h-4" />
-          </button>
+        {/* Add to playlist */}
+        {!compact && onAddToPlaylist && (
+          <div onClick={(e) => e.stopPropagation()}>
+            <AddToPlaylistPopover
+              songId={song.id}
+              playlists={playlists}
+              onAddToPlaylist={onAddToPlaylist}
+              onCreatePlaylist={onCreatePlaylist}
+              trigger={
+                <button
+                  className="p-2 rounded-full hover:bg-vinyl-border transition-colors text-vinyl-text-muted hover:text-vinyl-accent"
+                >
+                  <ListPlus className="w-4 h-4" />
+                </button>
+              }
+            />
+          </div>
         )}
 
         {/* Delete button */}
@@ -318,6 +324,7 @@ export function VirtualizedSongList({
   compact = false,
   playlists = [],
   onAddToPlaylist,
+  onCreatePlaylist,
   unavailableSongIds = new Set(),
   onDeleteSong,
   favoriteSongIds = new Set(),
@@ -326,7 +333,26 @@ export function VirtualizedSongList({
   onSkipDeleteConfirmationChange,
 }: VirtualizedSongListProps) {
   const parentRef = useRef<HTMLDivElement>(null);
-  const [showPlaylistMenu, setShowPlaylistMenu] = useState<string | null>(null);
+  
+  // Initialize OverlayScrollbars for custom scrollbar
+  const [initScrollbar] = useOverlayScrollbars({
+    options: {
+      scrollbars: {
+        theme: "os-theme-vinyl",
+        autoHide: "leave",
+        autoHideDelay: 400,
+        clickScroll: true,
+      },
+    },
+    defer: true,
+  });
+
+  useEffect(() => {
+    if (parentRef.current) {
+      initScrollbar(parentRef.current);
+    }
+  }, [initScrollbar]);
+
   const [deleteDialogSongId, setDeleteDialogSongId] = useState<string | null>(
     null,
   );
@@ -360,11 +386,6 @@ export function VirtualizedSongList({
       }
     }
   }, [currentSongId, songs, virtualizer]);
-
-  // Memoized callback for toggling playlist menu
-  const handleTogglePlaylistMenu = useCallback((songId: string | null) => {
-    setShowPlaylistMenu(songId);
-  }, []);
 
   const handleShowDeleteDialog = useCallback(
     (songId: string) => {
@@ -452,12 +473,11 @@ export function VirtualizedSongList({
                   isFavorite={isFavorite}
                   compact={compact}
                   playlists={playlists}
-                  showPlaylistMenu={showPlaylistMenu === song.id}
                   onPlay={onPlay}
                   onTogglePlayPause={onTogglePlayPause}
                   onStop={onStop}
                   onAddToPlaylist={onAddToPlaylist}
-                  onTogglePlaylistMenu={handleTogglePlaylistMenu}
+                  onCreatePlaylist={onCreatePlaylist}
                   onToggleFavorite={onToggleFavorite}
                   onShowDeleteDialog={handleShowDeleteDialog}
                 />
@@ -466,56 +486,6 @@ export function VirtualizedSongList({
           })}
         </div>
       </div>
-
-      {/* Add to Playlist modal - rendered outside the scroll container */}
-      {showPlaylistMenu && onAddToPlaylist && (
-        <>
-          <div
-            className="fixed inset-0 z-40 bg-black/20"
-            onClick={() => setShowPlaylistMenu(null)}
-          />
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-            <div className="bg-vinyl-surface border border-vinyl-border rounded-xl shadow-2xl py-2 w-64 max-h-80 overflow-y-auto pointer-events-auto">
-              <div className="px-4 py-2 text-sm font-medium text-vinyl-text border-b border-vinyl-border">
-                Add to playlist
-              </div>
-              {playlists.filter((p) => p.name !== "Favorites").length === 0 ? (
-                <div className="px-4 py-3 text-sm text-vinyl-text-muted">
-                  No playlists yet. Create one first!
-                </div>
-              ) : (
-                playlists
-                  .filter((p) => p.name !== "Favorites")
-                  .map((playlist) => {
-                    const isAlreadyInPlaylist =
-                      playlist.songIds.includes(showPlaylistMenu);
-                    return (
-                      <button
-                        key={playlist.id}
-                        onClick={() => {
-                          onAddToPlaylist(playlist.id, showPlaylistMenu);
-                          setShowPlaylistMenu(null);
-                        }}
-                        className={`flex items-center justify-between w-full px-4 py-2.5 text-left transition-colors text-sm ${
-                          isAlreadyInPlaylist
-                            ? "text-vinyl-accent bg-vinyl-accent/10"
-                            : "text-vinyl-text hover:bg-vinyl-border/50"
-                        }`}
-                      >
-                        <span>{playlist.name}</span>
-                        {isAlreadyInPlaylist && (
-                          <span className="text-xs text-vinyl-accent">
-                            ✓ Added
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })
-              )}
-            </div>
-          </div>
-        </>
-      )}
 
       {/* Delete confirmation dialog */}
       <ConfirmDialog

@@ -5,6 +5,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scrollarea";
 
 interface KeyboardShortcutsDialogProps {
   isOpen: boolean;
@@ -94,7 +95,7 @@ export function KeyboardShortcutsDialog({
         </DialogHeader>
 
         {/* Shortcuts list - scrollable */}
-        <div className="p-4 overflow-y-auto flex-1">
+        <ScrollArea className="p-4 flex-1">
           <div className="space-y-4">
             {shortcutGroups.map((group) => (
               <div key={group.title}>
@@ -117,7 +118,7 @@ export function KeyboardShortcutsDialog({
               </div>
             ))}
           </div>
-        </div>
+        </ScrollArea>
 
         {/* Footer */}
         <div className="px-6 py-3 border-t border-vinyl-border bg-vinyl-border/20 rounded-b-xl flex-shrink-0">

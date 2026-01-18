@@ -90,19 +90,6 @@
   padding: 8px;
 }
 
-.cmdk-list::-webkit-scrollbar {
-  width: 8px;
-}
-
-.cmdk-list::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.cmdk-list::-webkit-scrollbar-thumb {
-  background: var(--vinyl-border);
-  border-radius: 4px;
-}
-
 /* Empty state */
 .cmdk-empty {
   padding: 32px;

@@ -29,6 +29,7 @@ import { SleepTimer } from "./SleepTimer";
 import { VisualizerToggle } from "./VisualizerStylePicker";
 import { AudioVisualizer } from "./AudioVisualizer";
 import { tooltipProps } from "./Tooltip";
+import { ScrollArea } from "./ui";
 
 interface PlayerOverlayProps {
   currentSong: Song | null;
@@ -681,7 +682,7 @@ function ExpandedPlayer({
         </div>
 
         {/* Equalizer content */}
-        <div className="p-4 overflow-auto h-[calc(100%-4.5rem)]">
+        <ScrollArea className="p-4 h-[calc(100%-4.5rem)]">
           <Equalizer
             bands={eqBands}
             enabled={eqEnabled}
@@ -692,7 +693,7 @@ function ExpandedPlayer({
             onReset={onEqReset}
             onToggleEnabled={onEqToggleEnabled}
           />
-        </div>
+        </ScrollArea>
       </div>
 
       {/* Song Info Drawer */}
@@ -716,7 +717,7 @@ function ExpandedPlayer({
         </div>
 
         {/* Song Info content */}
-        <div className="p-4 overflow-auto h-[calc(100%-4.5rem)]">
+        <ScrollArea className="p-4 h-[calc(100%-4.5rem)]">
           {/* Album Art */}
           <div className="flex justify-center mb-6">
             <div className="w-48 h-48 rounded-xl overflow-hidden shadow-lg bg-vinyl-border">
@@ -840,7 +841,7 @@ function ExpandedPlayer({
               </div>
             )}
           </div>
-        </div>
+        </ScrollArea>
       </div>
     </div>
   );
