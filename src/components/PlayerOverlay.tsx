@@ -67,8 +67,8 @@ interface PlayerOverlayProps {
   onSleepTimerStop: () => void;
   onSleepTimerAddTime: (seconds: number) => void;
   // Display mode
-  displayMode: "vinyl" | "albumArt" | "generator";
-  onDisplayModeChange: (mode: "vinyl" | "albumArt" | "generator") => void;
+  displayMode: "vinyl" | "albumArt";
+  onDisplayModeChange: (mode: "vinyl" | "albumArt") => void;
   // Generator callbacks (for when display mode is generator)
   onGeneratorPlay?: () => void;
   onRegisterGeneratorStop?: (stopFn: () => void) => void;
@@ -335,8 +335,8 @@ function ExpandedPlayer({
   onSleepTimerStop: () => void;
   onSleepTimerAddTime: (seconds: number) => void;
   // Display mode
-  displayMode: "vinyl" | "albumArt" | "generator";
-  onDisplayModeChange: (mode: "vinyl" | "albumArt" | "generator") => void;
+  displayMode: "vinyl" | "albumArt";
+  onDisplayModeChange: (mode: "vinyl" | "albumArt") => void;
   // Generator
   onGeneratorPlay?: () => void;
   onRegisterGeneratorStop?: (stopFn: () => void) => void;
@@ -371,7 +371,26 @@ function ExpandedPlayer({
   onReorderQueue: (fromIndex: number, toIndex: number) => void;
 }) {
   const [showInfo, setShowInfo] = useState(false);
+  const [showGenerator, setShowGenerator] = useState(false);
+  const [generatorPlaying, setGeneratorPlaying] = useState(false);
+  const [generatorFreqData, setGeneratorFreqData] = useState<Uint8Array>(new Uint8Array(128));
+  const [generatorWaveData, setGeneratorWaveData] = useState<Uint8Array>(new Uint8Array(256));
   const startY = useRef<number | null>(null);
+  
+  // Callbacks for generator controls
+  const handleGeneratorVisualizerData = (freqData: Uint8Array, waveData: Uint8Array) => {
+    setGeneratorFreqData(freqData);
+    setGeneratorWaveData(waveData);
+  };
+  
+  const handleGeneratorPlayingChange = (playing: boolean) => {
+    setGeneratorPlaying(playing);
+  };
+  
+  // Use generator data for visualizer when generator is playing
+  const activeFrequencyData = generatorPlaying ? generatorFreqData : frequencyData;
+  const activeWaveformData = generatorPlaying ? generatorWaveData : waveformData;
+  const visualizerActive = isPlaying || generatorPlaying;
 
   const handleTouchStart = (e: React.TouchEvent) => {
     startY.current = e.touches[0].clientY;
@@ -475,27 +494,28 @@ function ExpandedPlayer({
           {/* Display Mode Toggle */}
           <button
             onClick={() => {
-              const modes: Array<"vinyl" | "albumArt" | "generator"> = ["vinyl", "albumArt", "generator"];
-              const currentIndex = modes.indexOf(displayMode);
-              const nextIndex = (currentIndex + 1) % modes.length;
-              onDisplayModeChange(modes[nextIndex]);
+              onDisplayModeChange(displayMode === "vinyl" ? "albumArt" : "vinyl");
             }}
             className="p-2 rounded-full transition-colors text-vinyl-text-muted hover:text-vinyl-text hover:bg-vinyl-surface/50"
-            {...tooltipProps(
-              displayMode === "vinyl"
-                ? "Switch to Album Art"
-                : displayMode === "albumArt"
-                  ? "Switch to Generator"
-                  : "Switch to Vinyl",
-            )}
+            {...tooltipProps(displayMode === "vinyl" ? "Switch to Album Art" : "Switch to Vinyl")}
           >
             {displayMode === "vinyl" ? (
               <Image className="w-5 h-5" />
-            ) : displayMode === "albumArt" ? (
-              <Sparkles className="w-5 h-5" />
             ) : (
               <Disc3 className="w-5 h-5" />
             )}
+          </button>
+          {/* Generator Toggle */}
+          <button
+            onClick={() => setShowGenerator(!showGenerator)}
+            className={`p-2 rounded-full transition-colors ${
+              showGenerator
+                ? "text-vinyl-accent bg-vinyl-accent/20"
+                : "text-vinyl-text-muted hover:text-vinyl-text hover:bg-vinyl-surface/50"
+            }`}
+            {...tooltipProps(showGenerator ? "Hide Generator" : "Show Music Generator")}
+          >
+            <Sparkles className="w-5 h-5" />
           </button>
           {/* Sleep Timer */}
           <SleepTimer
@@ -555,10 +575,10 @@ function ExpandedPlayer({
             >
               <div className="w-full h-full" style={{ filter: "blur(18px)" }}>
                 <AudioVisualizer
-                  frequencyData={frequencyData}
-                  waveformData={waveformData}
+                  frequencyData={activeFrequencyData}
+                  waveformData={activeWaveformData}
                   style={visualizerStyle}
-                  isPlaying={isPlaying}
+                  isPlaying={visualizerActive}
                   height={800}
                   className="w-full h-full opacity-70"
                 />
@@ -569,54 +589,56 @@ function ExpandedPlayer({
           </>
         )}
 
-        {/* Main display area - Vinyl, Album Art, or Generator */}
-        {displayMode === "generator" ? (
-          /* Generator Mode - full content area */
-          <div className="relative z-[2] flex-1 flex flex-col min-h-0 w-full max-w-lg mx-auto">
-            <GeneratorControls
-              onGeneratorPlay={onGeneratorPlay}
-              onRegisterStop={onRegisterGeneratorStop}
-              visualizerStyle={visualizerStyle}
+        {/* Main display area - Vinyl or Album Art with optional Generator */}
+        <div className="relative z-[2] flex-1 flex flex-col items-center justify-center min-h-[250px] px-6">
+          {/* Vinyl Player */}
+          {displayMode === "vinyl" && (
+            <VinylPlayer
+              currentSong={currentSong}
+              isPlaying={isPlaying || generatorPlaying}
+              playbackState={playbackState}
+              speed={speed}
+              showAlbumArt={showAlbumArt}
             />
-          </div>
-        ) : (
-          <>
-            <div className="relative z-[2] flex-1 flex flex-col items-center justify-center min-h-[250px] px-6">
-              {/* Vinyl Player */}
-              {displayMode === "vinyl" && (
-                <VinylPlayer
-                  currentSong={currentSong}
-                  isPlaying={isPlaying}
-                  playbackState={playbackState}
-                  speed={speed}
-                  showAlbumArt={showAlbumArt}
-                />
-              )}
+          )}
 
-              {/* Album Art Only */}
-              {displayMode === "albumArt" && (
-                <div className="w-64 h-64 md:w-80 md:h-80 rounded-2xl overflow-hidden shadow-2xl bg-vinyl-surface">
-                  {currentSong.coverArt ? (
-                    <img
-                      src={currentSong.coverArt}
-                      alt={currentSong.title}
-                      className={`w-full h-full object-cover transition-transform duration-500 ${
-                        isPlaying ? "scale-105" : "scale-100"
-                      }`}
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-vinyl-border">
-                      <Music className="w-24 h-24 text-vinyl-text-muted" />
-                    </div>
-                  )}
+          {/* Album Art Only */}
+          {displayMode === "albumArt" && (
+            <div className="w-64 h-64 md:w-80 md:h-80 rounded-2xl overflow-hidden shadow-2xl bg-vinyl-surface">
+              {currentSong.coverArt ? (
+                <img
+                  src={currentSong.coverArt}
+                  alt={currentSong.title}
+                  className={`w-full h-full object-cover transition-transform duration-500 ${
+                    (isPlaying || generatorPlaying) ? "scale-105" : "scale-100"
+                  }`}
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center bg-vinyl-border">
+                  <Music className="w-24 h-24 text-vinyl-text-muted" />
                 </div>
               )}
             </div>
+          )}
+        </div>
 
-            {/* Song info and controls - only for vinyl/albumArt modes */}
-            <div className="relative z-[2] w-full max-w-2xl mx-auto space-y-4 flex-shrink-0 px-6 pb-6">
-              <NowPlaying song={currentSong} />
-              <PlayerControls
+        {/* Song info and controls */}
+        <div className="relative z-[2] w-full max-w-2xl mx-auto space-y-4 flex-shrink-0 px-6 pb-6">
+          <NowPlaying song={currentSong} />
+          
+          {/* Generator Controls - shown when toggle is on */}
+          {showGenerator && (
+            <div className="bg-vinyl-surface/50 backdrop-blur-sm rounded-xl p-4 border border-vinyl-border">
+              <GeneratorControls
+                onGeneratorPlay={onGeneratorPlay}
+                onRegisterStop={onRegisterGeneratorStop}
+                onVisualizerData={handleGeneratorVisualizerData}
+                onPlayingChange={handleGeneratorPlayingChange}
+              />
+            </div>
+          )}
+          
+          <PlayerControls
             isPlaying={isPlaying}
             currentTime={currentTime}
             duration={duration}
@@ -634,9 +656,7 @@ function ExpandedPlayer({
             onSpeedChange={onSpeedChange}
             disabled={false}
           />
-            </div>
-          </>
-        )}
+        </div>
       </div>
 
       {/* Drawer Backdrop */}
