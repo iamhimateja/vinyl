@@ -397,16 +397,25 @@ function ExpandedPlayer({
   const activeWaveformData = generatorPlaying ? generatorWaveData : waveformData;
   const visualizerActive = isPlaying || generatorPlaying;
   
-  // Calculate speed for vinyl based on generator tempo (120 BPM = 1x speed)
-  const effectiveSpeed = generatorPlaying ? generatorTempo / 120 : speed;
+  // Calculate speed for vinyl based on generator tempo (100 BPM = 1x speed)
+  // This gives: 60 BPM = 0.6x, 100 BPM = 1x, 140 BPM = 1.4x, 180 BPM = 1.8x
+  const effectiveSpeed = generatorPlaying ? generatorTempo / 100 : speed;
   const effectivePlaybackState = generatorPlaying ? "playing" : playbackState;
   
-  // Hide generator controls when music starts playing from library/queue
+  // Hide generator controls and reset generator state when music starts playing from library/queue
   useEffect(() => {
     if (isPlaying && showGenerator) {
       setShowGenerator(false);
+      setGeneratorPlaying(false);
     }
   }, [isPlaying]);
+  
+  // Also reset generator playing state when generator panel is hidden
+  useEffect(() => {
+    if (!showGenerator && generatorPlaying) {
+      setGeneratorPlaying(false);
+    }
+  }, [showGenerator, generatorPlaying]);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     startY.current = e.touches[0].clientY;
