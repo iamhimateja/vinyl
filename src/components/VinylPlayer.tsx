@@ -25,17 +25,20 @@ export function VinylPlayer({
   const shouldSpin = isPlaying && playbackState === "playing";
   const isBuffering = playbackState === "buffering";
 
-  // Use effect to properly control animation state
+  // Use effect to properly control animation state - runs on every relevant change
   useEffect(() => {
     if (vinylRef.current) {
       const element = vinylRef.current;
-      if (shouldSpin) {
-        element.style.animationPlayState = "running";
-      } else {
-        element.style.animationPlayState = "paused";
-      }
+      // Use requestAnimationFrame to ensure DOM is updated
+      requestAnimationFrame(() => {
+        if (shouldSpin) {
+          element.style.animationPlayState = "running";
+        } else {
+          element.style.animationPlayState = "paused";
+        }
+      });
     }
-  }, [shouldSpin]);
+  }, [shouldSpin, isPlaying, playbackState]);
 
   // Update animation duration when speed changes
   useEffect(() => {
@@ -68,7 +71,7 @@ export function VinylPlayer({
           animationDuration: `${spinDuration}s`,
           animationTimingFunction: "linear",
           animationIterationCount: "infinite",
-          animationPlayState: shouldSpin ? "running" : "paused",
+          animationPlayState: "paused",
         }}
       >
         {/* Outer ring */}

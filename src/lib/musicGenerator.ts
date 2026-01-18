@@ -128,13 +128,13 @@ const MELODIES = [
 ];
 
 const CONFIG: Record<Genre, { tempo: { min: number; max: number; def: number }; swing: number; base: number }> = {
-  lofi: { tempo: { min: 65, max: 90, def: 75 }, swing: 0.12, base: 48 },
-  techno: { tempo: { min: 125, max: 145, def: 132 }, swing: 0, base: 36 },
-  "80s-synth": { tempo: { min: 105, max: 125, def: 118 }, swing: 0.02, base: 48 },
-  ambient: { tempo: { min: 60, max: 80, def: 70 }, swing: 0, base: 48 },
-  house: { tempo: { min: 118, max: 130, def: 124 }, swing: 0.05, base: 48 },
-  dnb: { tempo: { min: 160, max: 180, def: 174 }, swing: 0, base: 36 },
-  trap: { tempo: { min: 130, max: 160, def: 140 }, swing: 0, base: 36 },
+  lofi: { tempo: { min: 60, max: 140, def: 75 }, swing: 0.12, base: 48 },
+  techno: { tempo: { min: 60, max: 180, def: 132 }, swing: 0, base: 36 },
+  "80s-synth": { tempo: { min: 60, max: 140, def: 118 }, swing: 0.02, base: 48 },
+  ambient: { tempo: { min: 40, max: 120, def: 70 }, swing: 0, base: 48 },
+  house: { tempo: { min: 60, max: 140, def: 124 }, swing: 0.05, base: 48 },
+  dnb: { tempo: { min: 140, max: 200, def: 174 }, swing: 0, base: 36 },
+  trap: { tempo: { min: 80, max: 180, def: 140 }, swing: 0, base: 36 },
 };
 
 function parse(s: string): number[] { return s.split("").map(c => c === "x" ? 1 : 0); }
@@ -149,6 +149,7 @@ export class MusicGenerator {
   private delay: DelayNode | null = null;
   private delayFb: GainNode | null = null;
   private delayGain: GainNode | null = null;
+  private analyser: AnalyserNode | null = null;
 
   private playing = false;
   private genre: Genre = "lofi";
@@ -213,7 +214,33 @@ export class MusicGenerator {
     this.filter.connect(this.reverb); this.reverb.connect(this.reverbGain); this.reverbGain.connect(this.comp);
     this.filter.connect(this.delay); this.delay.connect(this.delayFb); this.delayFb.connect(this.delay);
     this.delay.connect(this.delayGain); this.delayGain.connect(this.comp);
-    this.comp.connect(this.master); this.master.connect(this.ctx.destination);
+    // Create analyser for visualization
+    this.analyser = this.ctx.createAnalyser();
+    this.analyser.fftSize = 256;
+    this.analyser.smoothingTimeConstant = 0.8;
+    
+    this.comp.connect(this.master);
+    this.master.connect(this.analyser);
+    this.analyser.connect(this.ctx.destination);
+  }
+
+  // Get frequency data for visualizer
+  getFrequencyData(): Uint8Array {
+    const data = new Uint8Array(this.analyser?.frequencyBinCount || 128);
+    this.analyser?.getByteFrequencyData(data);
+    return data;
+  }
+
+  // Get waveform data for visualizer
+  getWaveformData(): Uint8Array {
+    const data = new Uint8Array(this.analyser?.fftSize || 256);
+    this.analyser?.getByteTimeDomainData(data);
+    return data;
+  }
+
+  // Check if audio context is active
+  isAudioContextActive(): boolean {
+    return this.ctx?.state === 'running';
   }
 
   private freq(m: number) { return 440 * Math.pow(2, (m - 69) / 12); }

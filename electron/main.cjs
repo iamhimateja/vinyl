@@ -69,54 +69,56 @@ if (!isPackaged) {
   process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = "true";
 }
 
-// electron-store uses ESM, need to use dynamic import
+// Simple file-based store (electron-store has ESM bundling issues)
 let store = null;
-async function initStore() {
-  try {
-    const { default: Store } = await import("electron-store");
-    store = new Store();
-    console.log("[Store] electron-store initialized successfully");
-  } catch (error) {
-    console.error("[Store] Failed to initialize electron-store:", error);
-    // Create a simple fallback store using the file system
-    const storePath = path.join(app.getPath("userData"), "config.json");
-    console.log("[Store] Using fallback file-based store at:", storePath);
-    
-    store = {
-      _data: {},
-      _load() {
-        try {
-          if (fs.existsSync(storePath)) {
-            this._data = JSON.parse(fs.readFileSync(storePath, "utf-8"));
-          }
-        } catch (e) {
-          console.error("[Store] Error loading config:", e);
+function initStore() {
+  const storePath = path.join(app.getPath("userData"), "config.json");
+  console.log("[Store] Using file-based store at:", storePath);
+  
+  store = {
+    _data: null,
+    _load() {
+      if (this._data !== null) return; // Already loaded
+      try {
+        if (fs.existsSync(storePath)) {
+          this._data = JSON.parse(fs.readFileSync(storePath, "utf-8"));
+        } else {
           this._data = {};
         }
-      },
-      _save() {
-        try {
-          fs.writeFileSync(storePath, JSON.stringify(this._data, null, 2));
-        } catch (e) {
-          console.error("[Store] Error saving config:", e);
-        }
-      },
-      get(key, defaultValue) {
-        this._load();
-        return this._data[key] !== undefined ? this._data[key] : defaultValue;
-      },
-      set(key, value) {
-        this._load();
-        this._data[key] = value;
-        this._save();
-      },
-      delete(key) {
-        this._load();
-        delete this._data[key];
-        this._save();
+      } catch (e) {
+        console.error("[Store] Error loading config:", e);
+        this._data = {};
       }
-    };
-  }
+    },
+    _save() {
+      try {
+        // Ensure directory exists
+        const dir = path.dirname(storePath);
+        if (!fs.existsSync(dir)) {
+          fs.mkdirSync(dir, { recursive: true });
+        }
+        fs.writeFileSync(storePath, JSON.stringify(this._data, null, 2));
+      } catch (e) {
+        console.error("[Store] Error saving config:", e);
+      }
+    },
+    get(key, defaultValue) {
+      this._load();
+      return this._data[key] !== undefined ? this._data[key] : defaultValue;
+    },
+    set(key, value) {
+      this._load();
+      this._data[key] = value;
+      this._save();
+    },
+    delete(key) {
+      this._load();
+      delete this._data[key];
+      this._save();
+    }
+  };
+  
+  console.log("[Store] Initialized successfully");
 }
 
 let mainWindow;
@@ -1150,7 +1152,7 @@ if (!gotTheLock) {
   });
 }
 
-app.whenReady().then(async () => {
+app.whenReady().then(() => {
   console.log("[Electron] App ready, starting initialization...");
   console.log("[Electron] App path:", app.getAppPath());
   console.log("[Electron] User data path:", app.getPath("userData"));
@@ -1161,7 +1163,7 @@ app.whenReady().then(async () => {
   
   try {
     // Initialize store first
-    await initStore();
+    initStore();
 
     createWindow();
     

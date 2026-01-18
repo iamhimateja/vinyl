@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { ScrollArea } from "./ui";
 import {
   DndContext,
   closestCenter,
@@ -223,7 +224,7 @@ export function DraggableQueueList({
         items={songs.map((s) => s.id)}
         strategy={verticalListSortingStrategy}
       >
-        <div className="overflow-y-auto h-full">
+        <ScrollArea className="h-full">
           {songs.map((song, index) => (
             <SortableSongItem
               key={song.id}
@@ -237,7 +238,7 @@ export function DraggableQueueList({
               onDelete={onDelete}
             />
           ))}
-        </div>
+        </ScrollArea>
       </SortableContext>
     </DndContext>
   );

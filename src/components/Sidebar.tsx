@@ -8,7 +8,6 @@ import {
   RefreshCw,
   Settings,
   Headphones,
-  Wand2,
   Sun,
   Moon,
   Info,
@@ -39,7 +38,6 @@ const ICON_MAP = {
 const navItems = [
   { to: "/library", icon: Music, label: "Library" },
   { to: "/playlists", icon: ListMusic, label: "Playlists" },
-  { to: "/generator", icon: Wand2, label: "Generator" },
   { to: "/settings", icon: Settings, label: "Settings" },
 ];
 

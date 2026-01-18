@@ -15,6 +15,7 @@ import {
   Image,
   Info,
   FolderOpen,
+  Wand2,
 } from "lucide-react";
 import { formatDuration } from "../lib/audioMetadata";
 import type { Song, Playlist, PlaybackState } from "../types";
@@ -26,9 +27,10 @@ import { PlayerControls } from "./PlayerControls";
 import { DraggableQueueList } from "./DraggableQueueList";
 import { Equalizer } from "./Equalizer";
 import { SleepTimer } from "./SleepTimer";
-import { VisualizerToggle } from "./VisualizerStylePicker";
 import { AudioVisualizer } from "./AudioVisualizer";
 import { tooltipProps } from "./Tooltip";
+import { ScrollArea } from "./ui";
+import { GeneratorControls } from "./GeneratorControls";
 
 interface PlayerOverlayProps {
   currentSong: Song | null;
@@ -66,13 +68,14 @@ interface PlayerOverlayProps {
   // Display mode
   displayMode: "vinyl" | "albumArt";
   onDisplayModeChange: (mode: "vinyl" | "albumArt") => void;
+  // Generator callbacks (for when display mode is generator)
+  onGeneratorPlay?: () => void;
+  onRegisterGeneratorStop?: (stopFn: () => void) => void;
   // Visualizer props
   visualizerEnabled: boolean;
   visualizerStyle: VisualizerStyle;
   frequencyData: Uint8Array;
   waveformData: Uint8Array;
-  onVisualizerToggle: () => void;
-  onVisualizerStyleChange: (style: VisualizerStyle) => void;
   // Player callbacks
   onTogglePlayPause: () => void;
   onNext: () => void;
@@ -268,13 +271,14 @@ function ExpandedPlayer({
   // Display mode
   displayMode,
   onDisplayModeChange,
+  // Generator
+  onGeneratorPlay,
+  onRegisterGeneratorStop,
   // Visualizer
   visualizerEnabled,
   visualizerStyle,
   frequencyData,
   waveformData,
-  onVisualizerToggle,
-  onVisualizerStyleChange,
   onCollapse,
   onToggleQueue,
   onCloseQueue,
@@ -328,13 +332,14 @@ function ExpandedPlayer({
   // Display mode
   displayMode: "vinyl" | "albumArt";
   onDisplayModeChange: (mode: "vinyl" | "albumArt") => void;
+  // Generator
+  onGeneratorPlay?: () => void;
+  onRegisterGeneratorStop?: (stopFn: () => void) => void;
   // Visualizer
   visualizerEnabled: boolean;
   visualizerStyle: VisualizerStyle;
   frequencyData: Uint8Array;
   waveformData: Uint8Array;
-  onVisualizerToggle: () => void;
-  onVisualizerStyleChange: (style: VisualizerStyle) => void;
   onCollapse: () => void;
   onToggleQueue: () => void;
   onCloseQueue: () => void;
@@ -359,7 +364,51 @@ function ExpandedPlayer({
   onReorderQueue: (fromIndex: number, toIndex: number) => void;
 }) {
   const [showInfo, setShowInfo] = useState(false);
+  const [showGenerator, setShowGenerator] = useState(false);
+  const [generatorPlaying, setGeneratorPlaying] = useState(false);
+  const [generatorTempo, setGeneratorTempo] = useState(75);
+  const [generatorFreqData, setGeneratorFreqData] = useState<Uint8Array>(new Uint8Array(128));
+  const [generatorWaveData, setGeneratorWaveData] = useState<Uint8Array>(new Uint8Array(256));
   const startY = useRef<number | null>(null);
+  
+  // Callbacks for generator controls
+  const handleGeneratorVisualizerData = (freqData: Uint8Array, waveData: Uint8Array) => {
+    setGeneratorFreqData(freqData);
+    setGeneratorWaveData(waveData);
+  };
+  
+  const handleGeneratorPlayingChange = (playing: boolean) => {
+    setGeneratorPlaying(playing);
+  };
+  
+  const handleGeneratorTempoChange = (tempo: number) => {
+    setGeneratorTempo(tempo);
+  };
+  
+  // Use generator data for visualizer when generator is playing
+  const activeFrequencyData = generatorPlaying ? generatorFreqData : frequencyData;
+  const activeWaveformData = generatorPlaying ? generatorWaveData : waveformData;
+  const visualizerActive = isPlaying || generatorPlaying;
+  
+  // Calculate speed for vinyl based on generator tempo (100 BPM = 1x speed)
+  // This gives: 60 BPM = 0.6x, 100 BPM = 1x, 140 BPM = 1.4x, 180 BPM = 1.8x
+  const effectiveSpeed = generatorPlaying ? generatorTempo / 100 : speed;
+  const effectivePlaybackState = generatorPlaying ? "playing" : playbackState;
+  
+  // Hide generator controls and reset generator state when music starts playing from library/queue
+  useEffect(() => {
+    if (isPlaying && showGenerator) {
+      setShowGenerator(false);
+      setGeneratorPlaying(false);
+    }
+  }, [isPlaying]);
+  
+  // Also reset generator playing state when generator panel is hidden
+  useEffect(() => {
+    if (!showGenerator && generatorPlaying) {
+      setGeneratorPlaying(false);
+    }
+  }, [showGenerator, generatorPlaying]);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     startY.current = e.touches[0].clientY;
@@ -462,23 +511,29 @@ function ExpandedPlayer({
           </button>
           {/* Display Mode Toggle */}
           <button
-            onClick={() =>
-              onDisplayModeChange(
-                displayMode === "vinyl" ? "albumArt" : "vinyl",
-              )
-            }
+            onClick={() => {
+              onDisplayModeChange(displayMode === "vinyl" ? "albumArt" : "vinyl");
+            }}
             className="p-2 rounded-full transition-colors text-vinyl-text-muted hover:text-vinyl-text hover:bg-vinyl-surface/50"
-            {...tooltipProps(
-              displayMode === "vinyl"
-                ? "Switch to Album Art"
-                : "Switch to Vinyl",
-            )}
+            {...tooltipProps(displayMode === "vinyl" ? "Switch to Album Art" : "Switch to Vinyl")}
           >
             {displayMode === "vinyl" ? (
               <Image className="w-5 h-5" />
             ) : (
               <Disc3 className="w-5 h-5" />
             )}
+          </button>
+          {/* Generator Toggle */}
+          <button
+            onClick={() => setShowGenerator(!showGenerator)}
+            className={`p-2 rounded-full transition-colors ${
+              showGenerator
+                ? "text-vinyl-accent bg-vinyl-accent/20"
+                : "text-vinyl-text-muted hover:text-vinyl-text hover:bg-vinyl-surface/50"
+            }`}
+            {...tooltipProps(showGenerator ? "Hide Generator" : "Show Music Generator")}
+          >
+            <Wand2 className="w-5 h-5" />
           </button>
           {/* Sleep Timer */}
           <SleepTimer
@@ -489,24 +544,22 @@ function ExpandedPlayer({
             onStop={onSleepTimerStop}
             onAddTime={onSleepTimerAddTime}
           />
-          {/* Visualizer Toggle */}
-          <VisualizerToggle
-            enabled={visualizerEnabled}
-            currentStyle={visualizerStyle}
-            onToggle={onVisualizerToggle}
-            onStyleChange={onVisualizerStyleChange}
-          />
           <button
             onClick={() => {
-              setShowInfo(false);
-              onToggleEqualizer();
+              if (!showGenerator) {
+                setShowInfo(false);
+                onToggleEqualizer();
+              }
             }}
+            disabled={showGenerator}
             className={`p-2 rounded-full transition-colors ${
-              showEqualizer
-                ? "text-vinyl-accent bg-vinyl-accent/20"
-                : "text-vinyl-text-muted hover:text-vinyl-text hover:bg-vinyl-surface/50"
+              showGenerator
+                ? "text-vinyl-text-muted/30 cursor-not-allowed"
+                : showEqualizer
+                  ? "text-vinyl-accent bg-vinyl-accent/20"
+                  : "text-vinyl-text-muted hover:text-vinyl-text hover:bg-vinyl-surface/50"
             }`}
-            {...tooltipProps("Equalizer")}
+            {...tooltipProps(showGenerator ? "Equalizer (disabled for generator)" : "Equalizer")}
           >
             <SlidersHorizontal className="w-6 h-6" />
           </button>
@@ -538,10 +591,10 @@ function ExpandedPlayer({
             >
               <div className="w-full h-full" style={{ filter: "blur(18px)" }}>
                 <AudioVisualizer
-                  frequencyData={frequencyData}
-                  waveformData={waveformData}
+                  frequencyData={activeFrequencyData}
+                  waveformData={activeWaveformData}
                   style={visualizerStyle}
-                  isPlaying={isPlaying}
+                  isPlaying={visualizerActive}
                   height={800}
                   className="w-full h-full opacity-70"
                 />
@@ -552,15 +605,15 @@ function ExpandedPlayer({
           </>
         )}
 
-        {/* Main display area - Vinyl or Album Art */}
+        {/* Main display area - Vinyl or Album Art with optional Generator */}
         <div className="relative z-[2] flex-1 flex flex-col items-center justify-center min-h-[250px] px-6">
           {/* Vinyl Player */}
           {displayMode === "vinyl" && (
             <VinylPlayer
               currentSong={currentSong}
-              isPlaying={isPlaying}
-              playbackState={playbackState}
-              speed={speed}
+              isPlaying={isPlaying || generatorPlaying}
+              playbackState={effectivePlaybackState}
+              speed={effectiveSpeed}
               showAlbumArt={showAlbumArt}
             />
           )}
@@ -568,17 +621,21 @@ function ExpandedPlayer({
           {/* Album Art Only */}
           {displayMode === "albumArt" && (
             <div className="w-64 h-64 md:w-80 md:h-80 rounded-2xl overflow-hidden shadow-2xl bg-vinyl-surface">
-              {currentSong.coverArt ? (
+              {currentSong.coverArt && !showGenerator ? (
                 <img
                   src={currentSong.coverArt}
                   alt={currentSong.title}
                   className={`w-full h-full object-cover transition-transform duration-500 ${
-                    isPlaying ? "scale-105" : "scale-100"
+                    (isPlaying || generatorPlaying) ? "scale-105" : "scale-100"
                   }`}
                 />
               ) : (
-                <div className="w-full h-full flex items-center justify-center bg-vinyl-border">
-                  <Music className="w-24 h-24 text-vinyl-text-muted" />
+                <div className={`w-full h-full flex items-center justify-center bg-vinyl-border ${generatorPlaying ? "animate-pulse" : ""}`}>
+                  {showGenerator ? (
+                    <Wand2 className="w-24 h-24 text-vinyl-accent" />
+                  ) : (
+                    <Music className="w-24 h-24 text-vinyl-text-muted" />
+                  )}
                 </div>
               )}
             </div>
@@ -587,25 +644,43 @@ function ExpandedPlayer({
 
         {/* Song info and controls */}
         <div className="relative z-[2] w-full max-w-2xl mx-auto space-y-4 flex-shrink-0 px-6 pb-6">
-          <NowPlaying song={currentSong} />
-          <PlayerControls
-            isPlaying={isPlaying}
-            currentTime={currentTime}
-            duration={duration}
-            volume={volume}
-            repeat={repeat}
-            shuffle={shuffle}
-            speed={speed}
-            onTogglePlay={onTogglePlayPause}
-            onNext={onNext}
-            onPrevious={onPrevious}
-            onSeek={onSeek}
-            onVolumeChange={onVolumeChange}
-            onToggleRepeat={onToggleRepeat}
-            onToggleShuffle={onToggleShuffle}
-            onSpeedChange={onSpeedChange}
-            disabled={false}
-          />
+          {/* Show song info only when generator is not playing */}
+          {!showGenerator && <NowPlaying song={currentSong} />}
+          
+          {/* Generator Controls - shown when toggle is on */}
+          {showGenerator && (
+            <div className="bg-vinyl-surface/50 backdrop-blur-sm rounded-xl p-4 border border-vinyl-border">
+              <GeneratorControls
+                onGeneratorPlay={onGeneratorPlay}
+                onRegisterStop={onRegisterGeneratorStop}
+                onVisualizerData={handleGeneratorVisualizerData}
+                onPlayingChange={handleGeneratorPlayingChange}
+                onTempoChange={handleGeneratorTempoChange}
+              />
+            </div>
+          )}
+          
+          {/* Show player controls only when generator is not playing */}
+          {!showGenerator && (
+            <PlayerControls
+              isPlaying={isPlaying}
+              currentTime={currentTime}
+              duration={duration}
+              volume={volume}
+              repeat={repeat}
+              shuffle={shuffle}
+              speed={speed}
+              onTogglePlay={onTogglePlayPause}
+              onNext={onNext}
+              onPrevious={onPrevious}
+              onSeek={onSeek}
+              onVolumeChange={onVolumeChange}
+              onToggleRepeat={onToggleRepeat}
+              onToggleShuffle={onToggleShuffle}
+              onSpeedChange={onSpeedChange}
+              disabled={false}
+            />
+          )}
         </div>
       </div>
 
@@ -681,7 +756,7 @@ function ExpandedPlayer({
         </div>
 
         {/* Equalizer content */}
-        <div className="p-4 overflow-auto h-[calc(100%-4.5rem)]">
+        <ScrollArea className="p-4 h-[calc(100%-4.5rem)]">
           <Equalizer
             bands={eqBands}
             enabled={eqEnabled}
@@ -692,7 +767,7 @@ function ExpandedPlayer({
             onReset={onEqReset}
             onToggleEnabled={onEqToggleEnabled}
           />
-        </div>
+        </ScrollArea>
       </div>
 
       {/* Song Info Drawer */}
@@ -716,7 +791,7 @@ function ExpandedPlayer({
         </div>
 
         {/* Song Info content */}
-        <div className="p-4 overflow-auto h-[calc(100%-4.5rem)]">
+        <ScrollArea className="p-4 h-[calc(100%-4.5rem)]">
           {/* Album Art */}
           <div className="flex justify-center mb-6">
             <div className="w-48 h-48 rounded-xl overflow-hidden shadow-lg bg-vinyl-border">
@@ -840,7 +915,7 @@ function ExpandedPlayer({
               </div>
             )}
           </div>
-        </div>
+        </ScrollArea>
       </div>
     </div>
   );
@@ -878,13 +953,14 @@ export function PlayerOverlay({
   // Display mode
   displayMode,
   onDisplayModeChange,
+  // Generator
+  onGeneratorPlay,
+  onRegisterGeneratorStop,
   // Visualizer
   visualizerEnabled,
   visualizerStyle,
   frequencyData,
   waveformData,
-  onVisualizerToggle,
-  onVisualizerStyleChange,
   onTogglePlayPause,
   onNext,
   onPrevious,
@@ -1011,13 +1087,13 @@ export function PlayerOverlay({
           onSleepTimerStop={onSleepTimerStop}
           onSleepTimerAddTime={onSleepTimerAddTime}
           displayMode={displayMode}
+          onGeneratorPlay={onGeneratorPlay}
+          onRegisterGeneratorStop={onRegisterGeneratorStop}
           onDisplayModeChange={onDisplayModeChange}
           visualizerEnabled={visualizerEnabled}
           visualizerStyle={visualizerStyle}
           frequencyData={frequencyData}
           waveformData={waveformData}
-          onVisualizerToggle={onVisualizerToggle}
-          onVisualizerStyleChange={onVisualizerStyleChange}
           onCollapse={handleCollapse}
           onToggleQueue={() => {
             setShowEqualizer(false);
