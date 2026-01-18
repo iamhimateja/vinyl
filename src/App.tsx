@@ -47,6 +47,7 @@ import {
 
 import { FirstLaunchWizard } from "./components/FirstLaunchWizard";
 import { ScrollArea } from "./components/ui";
+import { toast } from "sonner";
 import type { Playlist, Song } from "./types";
 import {
   ArrowLeft,
@@ -328,45 +329,67 @@ function App() {
 
   // Visualizer style cycling
   const visualizerStyles: Array<"bars" | "wave" | "areaWave"> = ["bars", "wave", "areaWave"];
-  
-  const cycleVisualizerStyle = useCallback(() => {
-    const currentIndex = visualizerStyles.indexOf(settings.visualizerStyle);
-    const nextIndex = (currentIndex + 1) % visualizerStyles.length;
-    // Enable visualizer if it's off when cycling
-    if (!settings.visualizerEnabled) {
-      updateSetting("visualizerEnabled", true);
-    }
-    updateSetting("visualizerStyle", visualizerStyles[nextIndex]);
-  }, [settings.visualizerStyle, settings.visualizerEnabled, updateSetting]);
-
-  const turnOffVisualizer = useCallback(() => {
-    updateSetting("visualizerEnabled", false);
-  }, [updateSetting]);
 
   // Keyboard shortcuts for playback control
   useKeyboardShortcuts({
     onPlayPause: togglePlayPause,
     onNext: playNext,
     onPrevious: playPrevious,
-    onVolumeUp: () => setVolume(Math.min(1, volume + 0.1)),
-    onVolumeDown: () => setVolume(Math.max(0, volume - 0.1)),
+    onVolumeUp: () => {
+      setVolume(Math.min(1, volume + 0.1));
+      toast.success(`Volume: ${Math.round(Math.min(1, volume + 0.1) * 100)}%`, { duration: 1500 });
+    },
+    onVolumeDown: () => {
+      setVolume(Math.max(0, volume - 0.1));
+      toast.success(`Volume: ${Math.round(Math.max(0, volume - 0.1) * 100)}%`, { duration: 1500 });
+    },
     onMute: () => {
       if (volume > 0) {
         previousVolumeRef.current = volume;
         setVolume(0);
+        toast.success("Muted", { duration: 1500 });
       } else {
         setVolume(previousVolumeRef.current || 0.5);
+        toast.success("Unmuted", { duration: 1500 });
       }
     },
-    onToggleShuffle: toggleShuffle,
-    onToggleRepeat: toggleRepeat,
+    onToggleShuffle: () => {
+      toggleShuffle();
+      toast.success(shuffle ? "Shuffle off" : "Shuffle on", { duration: 1500 });
+    },
+    onToggleRepeat: () => {
+      toggleRepeat();
+      const nextRepeat = repeat === "none" ? "all" : repeat === "all" ? "one" : "none";
+      const messages = { none: "Repeat off", all: "Repeat all", one: "Repeat one" };
+      toast.success(messages[nextRepeat], { duration: 1500 });
+    },
     onSeekForward: () => seek(Math.min(duration, currentTime + 5)),
     onSeekBackward: () => seek(Math.max(0, currentTime - 5)),
-    onCycleVisualizer: cycleVisualizerStyle,
-    onToggleVisualizerOff: turnOffVisualizer,
+    onCycleVisualizer: () => {
+      const currentIndex = visualizerStyles.indexOf(settings.visualizerStyle);
+      const nextIndex = (currentIndex + 1) % visualizerStyles.length;
+      const nextStyle = visualizerStyles[nextIndex];
+      if (!settings.visualizerEnabled) updateSetting("visualizerEnabled", true);
+      updateSetting("visualizerStyle", nextStyle);
+      const styleNames = { bars: "Bars", wave: "Wave", areaWave: "Area Wave" };
+      toast.success(`Visualizer: ${styleNames[nextStyle]}`, { duration: 1500 });
+    },
+    onToggleVisualizerOff: () => {
+      if (settings.visualizerEnabled) {
+        updateSetting("visualizerEnabled", false);
+        toast.success("Visualizer off", { duration: 1500 });
+      }
+    },
     onToggleMusicInfo: () => setShowMusicInfoDialog(prev => !prev),
-    onToggleEqualizer: toggleEqualizer,
-    onToggleFavorite: currentSong ? () => toggleFavorite(currentSong.id) : undefined,
+    onToggleEqualizer: () => {
+      toggleEqualizer();
+      toast.success(eqEnabled ? "Equalizer off" : "Equalizer on", { duration: 1500 });
+    },
+    onToggleFavorite: currentSong ? () => {
+      const isFavorite = favoriteSongIds.has(currentSong.id);
+      toggleFavorite(currentSong.id);
+      toast.success(isFavorite ? "Removed from favorites" : "Added to favorites", { duration: 1500 });
+    } : undefined,
     enabled: !showFirstLaunchWizard && !showCommandMenu,
   });
 
@@ -763,6 +786,131 @@ function App() {
     [updateSetting],
   );
 
+  // ========== Action handlers with toast notifications ==========
+  
+  // Shuffle toggle with toast
+  const handleToggleShuffle = useCallback(() => {
+    toggleShuffle();
+    // Check current state (before toggle) to show correct message
+    toast.success(shuffle ? "Shuffle off" : "Shuffle on", {
+      duration: 2000,
+    });
+  }, [toggleShuffle, shuffle]);
+
+  // Repeat toggle with toast
+  const handleToggleRepeat = useCallback(() => {
+    toggleRepeat();
+    // Show next state after toggle
+    const nextRepeat = repeat === "none" ? "all" : repeat === "all" ? "one" : "none";
+    const messages = {
+      none: "Repeat off",
+      all: "Repeat all",
+      one: "Repeat one",
+    };
+    toast.success(messages[nextRepeat], { duration: 2000 });
+  }, [toggleRepeat, repeat]);
+
+  // Mute toggle with toast
+  const handleToggleMute = useCallback(() => {
+    if (volume > 0) {
+      previousVolumeRef.current = volume;
+      setVolume(0);
+      toast.success("Muted", { duration: 2000 });
+    } else {
+      setVolume(previousVolumeRef.current || 0.5);
+      toast.success("Unmuted", { duration: 2000 });
+    }
+  }, [volume, setVolume]);
+
+  // Equalizer toggle with toast
+  const handleToggleEqualizer = useCallback(() => {
+    toggleEqualizer();
+    toast.success(eqEnabled ? "Equalizer off" : "Equalizer on", {
+      duration: 2000,
+    });
+  }, [toggleEqualizer, eqEnabled]);
+
+  // Favorite toggle with toast
+  const handleToggleFavoriteWithToast = useCallback(
+    (songId: string) => {
+      const song = songs.find((s) => s.id === songId);
+      const isFavorite = favoriteSongIds.has(songId);
+      toggleFavorite(songId);
+      if (song) {
+        toast.success(
+          isFavorite ? `Removed "${song.title}" from favorites` : `Added "${song.title}" to favorites`,
+          { duration: 2000 }
+        );
+      }
+    },
+    [toggleFavorite, songs, favoriteSongIds]
+  );
+
+  // Visualizer cycle with toast
+  const handleCycleVisualizer = useCallback(() => {
+    const currentIndex = visualizerStyles.indexOf(settings.visualizerStyle);
+    const nextIndex = (currentIndex + 1) % visualizerStyles.length;
+    const nextStyle = visualizerStyles[nextIndex];
+    
+    if (!settings.visualizerEnabled) {
+      updateSetting("visualizerEnabled", true);
+    }
+    updateSetting("visualizerStyle", nextStyle);
+    
+    const styleNames = { bars: "Bars", wave: "Wave", areaWave: "Area Wave" };
+    toast.success(`Visualizer: ${styleNames[nextStyle]}`, { duration: 2000 });
+  }, [settings.visualizerStyle, settings.visualizerEnabled, updateSetting]);
+
+  // Create playlist with toast
+  const handleCreatePlaylistWithToast = useCallback(
+    async (name: string): Promise<string> => {
+      const id = await createPlaylist(name);
+      toast.success(`Created playlist "${name}"`, { duration: 2000 });
+      return id;
+    },
+    [createPlaylist]
+  );
+
+  // Add song to playlist with toast
+  const handleAddSongToPlaylist = useCallback(
+    (playlistId: string, songId: string) => {
+      const playlist = playlists.find((p) => p.id === playlistId);
+      const song = songs.find((s) => s.id === songId);
+      addSongToPlaylist(playlistId, songId);
+      if (playlist && song) {
+        toast.success(`Added "${song.title}" to "${playlist.name}"`, {
+          duration: 2000,
+        });
+      }
+    },
+    [addSongToPlaylist, playlists, songs]
+  );
+
+  // Delete song with toast
+  const handleDeleteSongWithToast = useCallback(
+    (songId: string) => {
+      const song = songs.find((s) => s.id === songId);
+      handleDeleteSong(songId);
+      if (song) {
+        toast.success(`Deleted "${song.title}"`, { duration: 2000 });
+      }
+    },
+    [handleDeleteSong, songs]
+  );
+
+
+
+  // Speed change with toast
+  const handleSpeedChange = useCallback(
+    (newSpeed: number) => {
+      setSpeed(newSpeed);
+      toast.success(`Playback speed: ${newSpeed}x`, { duration: 2000 });
+    },
+    [setSpeed]
+  );
+
+  // ========== End of action handlers with toasts ==========
+
   // Global drag and drop handlers for quick play
   const handleGlobalDragEnter = useCallback((e: DragEvent) => {
     e.preventDefault();
@@ -949,12 +1097,12 @@ function App() {
               onStop={stop}
               onDelete={handleDeleteSong}
               playlists={playlists}
-              onAddToPlaylist={addSongToPlaylist}
-              onCreatePlaylist={createPlaylist}
+              onAddToPlaylist={handleAddSongToPlaylist}
+              onCreatePlaylist={handleCreatePlaylistWithToast}
               unavailableSongIds={unavailableSongIds}
-              onDeleteSong={handleDeleteSong}
+              onDeleteSong={handleDeleteSongWithToast}
               favoriteSongIds={favoriteSongIds}
-              onToggleFavorite={toggleFavorite}
+              onToggleFavorite={handleToggleFavoriteWithToast}
               skipDeleteConfirmation={settings.skipDeleteConfirmation}
               onSkipDeleteConfirmationChange={
                 handleSkipDeleteConfirmationChange
@@ -977,11 +1125,11 @@ function App() {
       playSong,
       togglePlayPause,
       stop,
-      handleDeleteSong,
-      addSongToPlaylist,
-      createPlaylist,
+      handleDeleteSongWithToast,
+      handleAddSongToPlaylist,
+      handleCreatePlaylistWithToast,
       favoriteSongIds,
-      toggleFavorite,
+      handleToggleFavoriteWithToast,
       settings.skipDeleteConfirmation,
       handleSkipDeleteConfirmationChange,
     ],
@@ -997,7 +1145,7 @@ function App() {
             currentPlaylistId={currentPlaylistId}
             isPlaying={isPlaying}
             onCreatePlaylist={async (name) => {
-              await createPlaylist(name);
+              await handleCreatePlaylistWithToast(name);
             }}
             onDeletePlaylist={deletePlaylist}
             onUpdatePlaylist={updatePlaylist}
@@ -1252,25 +1400,39 @@ function App() {
         onEqBandChange={setBandGain}
         onEqPresetChange={applyPreset}
         onEqReset={resetEqualizer}
-        onEqToggleEnabled={toggleEqualizer}
+        onEqToggleEnabled={handleToggleEqualizer}
         // Sleep timer props
         sleepTimerActive={sleepTimer.isActive}
         sleepTimerRemainingTime={sleepTimer.formatRemainingTime()}
         sleepTimerProgress={sleepTimer.getProgress()}
-        onSleepTimerStart={sleepTimer.startTimer}
-        onSleepTimerStop={sleepTimer.stopTimer}
-        onSleepTimerAddTime={sleepTimer.addTime}
+        onSleepTimerStart={(minutes: number) => {
+          sleepTimer.startTimer(minutes);
+          toast.success(`Sleep timer: ${minutes} minutes`, { duration: 2000 });
+        }}
+        onSleepTimerStop={() => {
+          sleepTimer.stopTimer();
+          toast.success("Sleep timer cancelled", { duration: 2000 });
+        }}
+        onSleepTimerAddTime={(minutes: number) => {
+          sleepTimer.addTime(minutes);
+          toast.success(`Added ${minutes} minutes`, { duration: 2000 });
+        }}
         // Display mode
         displayMode={settings.displayMode}
-        onDisplayModeChange={(mode) => updateSetting("displayMode", mode)}
+        onDisplayModeChange={(mode) => {
+          updateSetting("displayMode", mode);
+          const modeNames = { vinyl: "Vinyl Player", albumArt: "Album Art" };
+          toast.success(`Display: ${modeNames[mode]}`, { duration: 1500 });
+        }}
         // Visualizer props
         visualizerEnabled={settings.visualizerEnabled}
         visualizerStyle={settings.visualizerStyle}
         frequencyData={frequencyData}
         waveformData={waveformData}
-        onVisualizerToggle={() =>
-          updateSetting("visualizerEnabled", !settings.visualizerEnabled)
-        }
+        onVisualizerToggle={() => {
+          updateSetting("visualizerEnabled", !settings.visualizerEnabled);
+          toast.success(settings.visualizerEnabled ? "Visualizer off" : "Visualizer on", { duration: 1500 });
+        }}
         onVisualizerStyleChange={(style) =>
           updateSetting("visualizerStyle", style)
         }
@@ -1279,15 +1441,15 @@ function App() {
         onPrevious={playPrevious}
         onSeek={seek}
         onVolumeChange={setVolume}
-        onToggleRepeat={toggleRepeat}
-        onToggleShuffle={toggleShuffle}
-        onSpeedChange={setSpeed}
+        onToggleRepeat={handleToggleRepeat}
+        onToggleShuffle={handleToggleShuffle}
+        onSpeedChange={handleSpeedChange}
         onPlayFromQueue={playFromQueue}
         onStop={stop}
         onDeleteFromQueue={removeSongFromQueue}
         onReorderQueue={reorderQueue}
         onToggleFavorite={
-          currentSong ? () => toggleFavorite(currentSong.id) : undefined
+          currentSong ? () => handleToggleFavoriteWithToast(currentSong.id) : undefined
         }
         autoExpand={autoExpandPlayer}
         onAutoExpandHandled={() => setAutoExpandPlayer(false)}
@@ -1359,24 +1521,24 @@ function App() {
         onPlayPause={togglePlayPause}
         onNext={playNext}
         onPrevious={playPrevious}
-        onToggleShuffle={toggleShuffle}
-        onToggleRepeat={toggleRepeat}
-        onMute={() => {
-          if (volume > 0) {
-            previousVolumeRef.current = volume;
-            setVolume(0);
-          } else {
-            setVolume(previousVolumeRef.current || 0.5);
-          }
-        }}
+        onToggleShuffle={handleToggleShuffle}
+        onToggleRepeat={handleToggleRepeat}
+        onMute={handleToggleMute}
         onPlaySong={(song) => playSong(song, null)}
         favoriteSongIds={favoriteSongIds}
-        onToggleFavorite={toggleFavorite}
+        onToggleFavorite={handleToggleFavoriteWithToast}
         theme={settings.theme}
-        onToggleTheme={() => updateSetting("theme", settings.theme === "dark" ? "light" : "dark")}
+        onToggleTheme={() => {
+          const newTheme = settings.theme === "dark" ? "light" : "dark";
+          updateSetting("theme", newTheme);
+          toast.success(`Theme: ${newTheme === "dark" ? "Dark" : "Light"}`, { duration: 1500 });
+        }}
         visualizerEnabled={settings.visualizerEnabled}
-        onToggleVisualizer={() => updateSetting("visualizerEnabled", !settings.visualizerEnabled)}
-        onCycleVisualizerStyle={cycleVisualizerStyle}
+        onToggleVisualizer={() => {
+          updateSetting("visualizerEnabled", !settings.visualizerEnabled);
+          toast.success(settings.visualizerEnabled ? "Visualizer off" : "Visualizer on", { duration: 1500 });
+        }}
+        onCycleVisualizerStyle={handleCycleVisualizer}
         onShowMusicInfo={() => setShowMusicInfoDialog(true)}
         onShowKeyboardShortcuts={() => setShowKeyboardShortcuts(true)}
       />
