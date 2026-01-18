@@ -15,6 +15,7 @@ import {
   Image,
   Info,
   FolderOpen,
+  Sparkles,
 } from "lucide-react";
 import { formatDuration } from "../lib/audioMetadata";
 import type { Song, Playlist, PlaybackState } from "../types";
@@ -30,6 +31,7 @@ import { VisualizerToggle } from "./VisualizerStylePicker";
 import { AudioVisualizer } from "./AudioVisualizer";
 import { tooltipProps } from "./Tooltip";
 import { ScrollArea } from "./ui";
+import { GeneratorControls } from "./GeneratorControls";
 
 interface PlayerOverlayProps {
   currentSong: Song | null;
@@ -65,8 +67,11 @@ interface PlayerOverlayProps {
   onSleepTimerStop: () => void;
   onSleepTimerAddTime: (seconds: number) => void;
   // Display mode
-  displayMode: "vinyl" | "albumArt";
-  onDisplayModeChange: (mode: "vinyl" | "albumArt") => void;
+  displayMode: "vinyl" | "albumArt" | "generator";
+  onDisplayModeChange: (mode: "vinyl" | "albumArt" | "generator") => void;
+  // Generator callbacks (for when display mode is generator)
+  onGeneratorPlay?: () => void;
+  onRegisterGeneratorStop?: (stopFn: () => void) => void;
   // Visualizer props
   visualizerEnabled: boolean;
   visualizerStyle: VisualizerStyle;
@@ -269,6 +274,9 @@ function ExpandedPlayer({
   // Display mode
   displayMode,
   onDisplayModeChange,
+  // Generator
+  onGeneratorPlay,
+  onRegisterGeneratorStop,
   // Visualizer
   visualizerEnabled,
   visualizerStyle,
@@ -327,8 +335,11 @@ function ExpandedPlayer({
   onSleepTimerStop: () => void;
   onSleepTimerAddTime: (seconds: number) => void;
   // Display mode
-  displayMode: "vinyl" | "albumArt";
-  onDisplayModeChange: (mode: "vinyl" | "albumArt") => void;
+  displayMode: "vinyl" | "albumArt" | "generator";
+  onDisplayModeChange: (mode: "vinyl" | "albumArt" | "generator") => void;
+  // Generator
+  onGeneratorPlay?: () => void;
+  onRegisterGeneratorStop?: (stopFn: () => void) => void;
   // Visualizer
   visualizerEnabled: boolean;
   visualizerStyle: VisualizerStyle;
@@ -463,20 +474,25 @@ function ExpandedPlayer({
           </button>
           {/* Display Mode Toggle */}
           <button
-            onClick={() =>
-              onDisplayModeChange(
-                displayMode === "vinyl" ? "albumArt" : "vinyl",
-              )
-            }
+            onClick={() => {
+              const modes: Array<"vinyl" | "albumArt" | "generator"> = ["vinyl", "albumArt", "generator"];
+              const currentIndex = modes.indexOf(displayMode);
+              const nextIndex = (currentIndex + 1) % modes.length;
+              onDisplayModeChange(modes[nextIndex]);
+            }}
             className="p-2 rounded-full transition-colors text-vinyl-text-muted hover:text-vinyl-text hover:bg-vinyl-surface/50"
             {...tooltipProps(
               displayMode === "vinyl"
                 ? "Switch to Album Art"
-                : "Switch to Vinyl",
+                : displayMode === "albumArt"
+                  ? "Switch to Generator"
+                  : "Switch to Vinyl",
             )}
           >
             {displayMode === "vinyl" ? (
               <Image className="w-5 h-5" />
+            ) : displayMode === "albumArt" ? (
+              <Sparkles className="w-5 h-5" />
             ) : (
               <Disc3 className="w-5 h-5" />
             )}
@@ -553,43 +569,54 @@ function ExpandedPlayer({
           </>
         )}
 
-        {/* Main display area - Vinyl or Album Art */}
-        <div className="relative z-[2] flex-1 flex flex-col items-center justify-center min-h-[250px] px-6">
-          {/* Vinyl Player */}
-          {displayMode === "vinyl" && (
-            <VinylPlayer
-              currentSong={currentSong}
-              isPlaying={isPlaying}
-              playbackState={playbackState}
-              speed={speed}
-              showAlbumArt={showAlbumArt}
+        {/* Main display area - Vinyl, Album Art, or Generator */}
+        {displayMode === "generator" ? (
+          /* Generator Mode - full content area */
+          <div className="relative z-[2] flex-1 flex flex-col min-h-0 w-full max-w-lg mx-auto">
+            <GeneratorControls
+              onGeneratorPlay={onGeneratorPlay}
+              onRegisterStop={onRegisterGeneratorStop}
+              visualizerStyle={visualizerStyle}
             />
-          )}
-
-          {/* Album Art Only */}
-          {displayMode === "albumArt" && (
-            <div className="w-64 h-64 md:w-80 md:h-80 rounded-2xl overflow-hidden shadow-2xl bg-vinyl-surface">
-              {currentSong.coverArt ? (
-                <img
-                  src={currentSong.coverArt}
-                  alt={currentSong.title}
-                  className={`w-full h-full object-cover transition-transform duration-500 ${
-                    isPlaying ? "scale-105" : "scale-100"
-                  }`}
+          </div>
+        ) : (
+          <>
+            <div className="relative z-[2] flex-1 flex flex-col items-center justify-center min-h-[250px] px-6">
+              {/* Vinyl Player */}
+              {displayMode === "vinyl" && (
+                <VinylPlayer
+                  currentSong={currentSong}
+                  isPlaying={isPlaying}
+                  playbackState={playbackState}
+                  speed={speed}
+                  showAlbumArt={showAlbumArt}
                 />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center bg-vinyl-border">
-                  <Music className="w-24 h-24 text-vinyl-text-muted" />
+              )}
+
+              {/* Album Art Only */}
+              {displayMode === "albumArt" && (
+                <div className="w-64 h-64 md:w-80 md:h-80 rounded-2xl overflow-hidden shadow-2xl bg-vinyl-surface">
+                  {currentSong.coverArt ? (
+                    <img
+                      src={currentSong.coverArt}
+                      alt={currentSong.title}
+                      className={`w-full h-full object-cover transition-transform duration-500 ${
+                        isPlaying ? "scale-105" : "scale-100"
+                      }`}
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-vinyl-border">
+                      <Music className="w-24 h-24 text-vinyl-text-muted" />
+                    </div>
+                  )}
                 </div>
               )}
             </div>
-          )}
-        </div>
 
-        {/* Song info and controls */}
-        <div className="relative z-[2] w-full max-w-2xl mx-auto space-y-4 flex-shrink-0 px-6 pb-6">
-          <NowPlaying song={currentSong} />
-          <PlayerControls
+            {/* Song info and controls - only for vinyl/albumArt modes */}
+            <div className="relative z-[2] w-full max-w-2xl mx-auto space-y-4 flex-shrink-0 px-6 pb-6">
+              <NowPlaying song={currentSong} />
+              <PlayerControls
             isPlaying={isPlaying}
             currentTime={currentTime}
             duration={duration}
@@ -607,7 +634,9 @@ function ExpandedPlayer({
             onSpeedChange={onSpeedChange}
             disabled={false}
           />
-        </div>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Drawer Backdrop */}
@@ -879,6 +908,9 @@ export function PlayerOverlay({
   // Display mode
   displayMode,
   onDisplayModeChange,
+  // Generator
+  onGeneratorPlay,
+  onRegisterGeneratorStop,
   // Visualizer
   visualizerEnabled,
   visualizerStyle,
@@ -1012,6 +1044,8 @@ export function PlayerOverlay({
           onSleepTimerStop={onSleepTimerStop}
           onSleepTimerAddTime={onSleepTimerAddTime}
           displayMode={displayMode}
+          onGeneratorPlay={onGeneratorPlay}
+          onRegisterGeneratorStop={onRegisterGeneratorStop}
           onDisplayModeChange={onDisplayModeChange}
           visualizerEnabled={visualizerEnabled}
           visualizerStyle={visualizerStyle}
