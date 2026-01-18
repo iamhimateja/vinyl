@@ -15,7 +15,7 @@ import {
   Image,
   Info,
   FolderOpen,
-  Sparkles,
+  Wand2,
 } from "lucide-react";
 import { formatDuration } from "../lib/audioMetadata";
 import type { Song, Playlist, PlaybackState } from "../types";
@@ -515,7 +515,7 @@ function ExpandedPlayer({
             }`}
             {...tooltipProps(showGenerator ? "Hide Generator" : "Show Music Generator")}
           >
-            <Sparkles className="w-5 h-5" />
+            <Wand2 className="w-5 h-5" />
           </button>
           {/* Sleep Timer */}
           <SleepTimer
@@ -624,7 +624,8 @@ function ExpandedPlayer({
 
         {/* Song info and controls */}
         <div className="relative z-[2] w-full max-w-2xl mx-auto space-y-4 flex-shrink-0 px-6 pb-6">
-          <NowPlaying song={currentSong} />
+          {/* Show song info only when generator is not playing */}
+          {!generatorPlaying && <NowPlaying song={currentSong} />}
           
           {/* Generator Controls - shown when toggle is on */}
           {showGenerator && (
@@ -638,24 +639,27 @@ function ExpandedPlayer({
             </div>
           )}
           
-          <PlayerControls
-            isPlaying={isPlaying}
-            currentTime={currentTime}
-            duration={duration}
-            volume={volume}
-            repeat={repeat}
-            shuffle={shuffle}
-            speed={speed}
-            onTogglePlay={onTogglePlayPause}
-            onNext={onNext}
-            onPrevious={onPrevious}
-            onSeek={onSeek}
-            onVolumeChange={onVolumeChange}
-            onToggleRepeat={onToggleRepeat}
-            onToggleShuffle={onToggleShuffle}
-            onSpeedChange={onSpeedChange}
-            disabled={false}
-          />
+          {/* Show player controls only when generator is not playing */}
+          {!generatorPlaying && (
+            <PlayerControls
+              isPlaying={isPlaying}
+              currentTime={currentTime}
+              duration={duration}
+              volume={volume}
+              repeat={repeat}
+              shuffle={shuffle}
+              speed={speed}
+              onTogglePlay={onTogglePlayPause}
+              onNext={onNext}
+              onPrevious={onPrevious}
+              onSeek={onSeek}
+              onVolumeChange={onVolumeChange}
+              onToggleRepeat={onToggleRepeat}
+              onToggleShuffle={onToggleShuffle}
+              onSpeedChange={onSpeedChange}
+              disabled={false}
+            />
+          )}
         </div>
       </div>
 
