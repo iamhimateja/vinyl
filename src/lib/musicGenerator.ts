@@ -149,6 +149,7 @@ export class MusicGenerator {
   private delay: DelayNode | null = null;
   private delayFb: GainNode | null = null;
   private delayGain: GainNode | null = null;
+  private analyser: AnalyserNode | null = null;
 
   private playing = false;
   private genre: Genre = "lofi";
@@ -213,7 +214,33 @@ export class MusicGenerator {
     this.filter.connect(this.reverb); this.reverb.connect(this.reverbGain); this.reverbGain.connect(this.comp);
     this.filter.connect(this.delay); this.delay.connect(this.delayFb); this.delayFb.connect(this.delay);
     this.delay.connect(this.delayGain); this.delayGain.connect(this.comp);
-    this.comp.connect(this.master); this.master.connect(this.ctx.destination);
+    // Create analyser for visualization
+    this.analyser = this.ctx.createAnalyser();
+    this.analyser.fftSize = 256;
+    this.analyser.smoothingTimeConstant = 0.8;
+    
+    this.comp.connect(this.master);
+    this.master.connect(this.analyser);
+    this.analyser.connect(this.ctx.destination);
+  }
+
+  // Get frequency data for visualizer
+  getFrequencyData(): Uint8Array {
+    const data = new Uint8Array(this.analyser?.frequencyBinCount || 128);
+    this.analyser?.getByteFrequencyData(data);
+    return data;
+  }
+
+  // Get waveform data for visualizer
+  getWaveformData(): Uint8Array {
+    const data = new Uint8Array(this.analyser?.fftSize || 256);
+    this.analyser?.getByteTimeDomainData(data);
+    return data;
+  }
+
+  // Check if audio context is active
+  isAudioContextActive(): boolean {
+    return this.ctx?.state === 'running';
   }
 
   private freq(m: number) { return 440 * Math.pow(2, (m - 69) / 12); }

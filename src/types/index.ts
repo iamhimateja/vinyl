@@ -76,7 +76,7 @@ export interface AppSettings {
   eqPreset: string | null;
 
   // Now Playing Display
-  displayMode: "vinyl" | "albumArt";
+  displayMode: "vinyl" | "albumArt" | "generator";
 
   // Background Visualizer
   visualizerEnabled: boolean;

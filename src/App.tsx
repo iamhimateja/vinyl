@@ -1421,9 +1421,12 @@ function App() {
         displayMode={settings.displayMode}
         onDisplayModeChange={(mode) => {
           updateSetting("displayMode", mode);
-          const modeNames = { vinyl: "Vinyl Player", albumArt: "Album Art" };
+          const modeNames: Record<string, string> = { vinyl: "Vinyl Player", albumArt: "Album Art", generator: "Music Generator" };
           toast.success(`Display: ${modeNames[mode]}`, { duration: 1500 });
         }}
+        // Generator props (for Now Playing generator mode)
+        onGeneratorPlay={handleGeneratorPlay}
+        onRegisterGeneratorStop={handleRegisterGeneratorStop}
         // Visualizer props
         visualizerEnabled={settings.visualizerEnabled}
         visualizerStyle={settings.visualizerStyle}
