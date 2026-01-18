@@ -400,6 +400,13 @@ function ExpandedPlayer({
   // Calculate speed for vinyl based on generator tempo (120 BPM = 1x speed)
   const effectiveSpeed = generatorPlaying ? generatorTempo / 120 : speed;
   const effectivePlaybackState = generatorPlaying ? "playing" : playbackState;
+  
+  // Hide generator controls when music starts playing from library/queue
+  useEffect(() => {
+    if (isPlaying && showGenerator) {
+      setShowGenerator(false);
+    }
+  }, [isPlaying]);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     startY.current = e.touches[0].clientY;
