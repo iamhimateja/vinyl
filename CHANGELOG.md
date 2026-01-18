@@ -4,6 +4,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-01-18
+
+### Added
+- Music generator integrated into Now Playing view
+- Visualizer keyboard shortcut improved: V cycles on/styles/off, VV toggles
+- Toast notifications for player actions
+- Add to playlist popover with custom scroll area
+
+### Fixed
+- Electron packaged app not launching (removed ESM electron-store dependency)
+- CI build icons for macOS and Windows
+
+### Changed
+- Simplified file-based settings store for better compatibility
+
 ## [0.1.0] - 2026-01-18
 
 Initial public release.

@@ -1,7 +1,7 @@
 {
   "name": "vinyl-music-player",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A Music Player",
   "author": {
     "name": "Hima Teja",
@@ -79,9 +79,11 @@
       "target": [
         {
           "target": "AppImage",
-          "arch": [
-            "x64"
-          ]
+          "arch": ["x64"]
+        },
+        {
+          "target": "deb",
+          "arch": ["x64"]
         }
       ],
       "category": "Audio",
